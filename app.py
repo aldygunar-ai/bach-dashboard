@@ -58,7 +58,7 @@ def load_data():
 
 df_raw = load_data()
 
-# --- 3. LOGIKA CLEAR FILTER (MODERN SYNC) ---
+# --- 3. LOGIKA CLEAR FILTER (ZERO DEFAULT) ---
 if 'reset_counter' not in st.session_state:
     st.session_state.reset_counter = 0
 
@@ -68,16 +68,11 @@ def do_reset():
 with st.sidebar:
     st.markdown('<div class="sidebar-title">PT BACH MULTI GLOBAL</div>', unsafe_allow_html=True)
     
-    # Counter untuk memaksa widget merender ulang dengan key baru
     c = st.session_state.reset_counter
     
-    # Nilai default hanya aktif saat ignition (reset_counter == 0)
-    # Setelah klik reset, d_proj dan d_year menjadi list kosong []
-    d_proj = list(df_raw['PROJECT'].unique()) if c == 0 else []
-    d_year = ["2026"] if c == 0 else []
-
-    sel_proj = st.multiselect("Project", df_raw['PROJECT'].unique(), default=d_proj, key=f'p_{c}')
-    sel_year = st.multiselect("Tahun", sorted(df_raw['Tahun'].unique(), reverse=True), default=d_year, key=f'y_{c}')
+    # Semua default diatur ke list kosong []
+    sel_proj = st.multiselect("Project", df_raw['PROJECT'].unique(), default=[], key=f'p_{c}')
+    sel_year = st.multiselect("Tahun", sorted(df_raw['Tahun'].unique(), reverse=True), default=[], key=f'y_{c}')
     sel_month = st.multiselect("Bulan", df_raw['Bulan'].unique(), key=f'm_{c}')
     sel_stat = st.multiselect("Status", sorted(df_raw['STATUS'].unique()), key=f's_{c}')
     sel_site = st.multiselect("Site (WH Tujuan)", sorted(df_raw['WH TUJUAN'].dropna().unique()), key=f'st_{c}')
@@ -88,7 +83,7 @@ with st.sidebar:
 # --- 4. DATA FILTERING ---
 df_f = df_raw.copy()
 
-# Logika filter: hanya memotong data jika user memilih opsi (tidak blank)
+# Filter hanya berjalan jika user memilih sesuatu
 if sel_proj: df_f = df_f[df_f['PROJECT'].isin(sel_proj)]
 if sel_year: df_f = df_f[df_f['Tahun'].isin(sel_year)]
 if sel_month: df_f = df_f[df_f['Bulan'].isin(sel_month)]
@@ -97,6 +92,11 @@ if sel_site: df_f = df_f[df_f['WH TUJUAN'].isin(sel_site)]
 
 # --- 5. TAMPILAN DASHBOARD ---
 st.title("📊 Dashboard Project Bach")
+
+# Cek apakah ada filter yang dipilih
+if not (sel_proj or sel_year or sel_month or sel_stat or sel_site):
+    st.info("👋 Selamat Datang! Silakan pilih filter di samping kiri untuk menampilkan data.")
+    st.stop() # Menghentikan eksekusi kode di bawahnya agar dashboard bersih
 
 # KPI Top
 m1, m2, m3, m4 = st.columns(4)
@@ -114,8 +114,6 @@ if not df_f.empty:
     fig_tr = px.line(trend_data, x='Tgl_Str', y='Requests', markers=True, text='Requests', color_discrete_sequence=['#0E2F56'])
     fig_tr.update_traces(textposition="top center")
     st.plotly_chart(fig_tr, use_container_width=True)
-else:
-    st.info("Silakan pilih filter untuk melihat tren data.")
 
 st.markdown("---")
 
