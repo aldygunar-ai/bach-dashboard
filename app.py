@@ -58,21 +58,22 @@ def load_data():
 
 df_raw = load_data()
 
-# --- 3. LOGIKA CLEAR FILTER (FIXED) ---
-if 'reset_count' not in st.session_state:
-    st.session_state.reset_count = 0
+# --- 3. LOGIKA CLEAR FILTER (MODERN SYNC) ---
+if 'reset_counter' not in st.session_state:
+    st.session_state.reset_counter = 0
 
-def handle_reset():
-    st.session_state.reset_count += 1
+def do_reset():
+    st.session_state.reset_counter += 1
 
 with st.sidebar:
     st.markdown('<div class="sidebar-title">PT BACH MULTI GLOBAL</div>', unsafe_allow_html=True)
     
-    c = st.session_state.reset_count
+    # Counter untuk memaksa widget merender ulang dengan key baru
+    c = st.session_state.reset_counter
     
-    # PERUBAHAN DISINI: Default hanya diisi jika reset_count masih 0 (pertama kali buka)
-    # Jika sudah klik reset, dia akan kosong melompong.
-    d_proj = df_raw['PROJECT'].unique() if c == 0 else []
+    # Nilai default hanya aktif saat ignition (reset_counter == 0)
+    # Setelah klik reset, d_proj dan d_year menjadi list kosong []
+    d_proj = list(df_raw['PROJECT'].unique()) if c == 0 else []
     d_year = ["2026"] if c == 0 else []
 
     sel_proj = st.multiselect("Project", df_raw['PROJECT'].unique(), default=d_proj, key=f'p_{c}')
@@ -82,30 +83,22 @@ with st.sidebar:
     sel_site = st.multiselect("Site (WH Tujuan)", sorted(df_raw['WH TUJUAN'].dropna().unique()), key=f'st_{c}')
     
     st.divider()
-    st.button("🔄 Clear All Filters", on_click=handle_reset, use_container_width=True)
+    st.button("🔄 Clear All Filters", on_click=do_reset, use_container_width=True)
 
-# --- 4. APLIKASI FILTER (FIXED LOGIC) ---
+# --- 4. DATA FILTERING ---
 df_f = df_raw.copy()
 
-# Filter Project (Hanya jika diisi)
-if sel_proj:
-    df_f = df_f[df_f['PROJECT'].isin(sel_proj)]
-# Filter Tahun
-if sel_year:
-    df_f = df_f[df_f['Tahun'].isin(sel_year)]
-# Filter Bulan
-if sel_month:
-    df_f = df_f[df_f['Bulan'].isin(sel_month)]
-# Filter Status
-if sel_stat:
-    df_f = df_f[df_f['STATUS'].isin(sel_stat)]
-# Filter Site (WH Tujuan)
-if sel_site:
-    df_f = df_f[df_f['WH TUJUAN'].isin(sel_site)]
+# Logika filter: hanya memotong data jika user memilih opsi (tidak blank)
+if sel_proj: df_f = df_f[df_f['PROJECT'].isin(sel_proj)]
+if sel_year: df_f = df_f[df_f['Tahun'].isin(sel_year)]
+if sel_month: df_f = df_f[df_f['Bulan'].isin(sel_month)]
+if sel_stat: df_f = df_f[df_f['STATUS'].isin(sel_stat)]
+if sel_site: df_f = df_f[df_f['WH TUJUAN'].isin(sel_site)]
 
-# --- 5. DASHBOARD CONTENT ---
+# --- 5. TAMPILAN DASHBOARD ---
 st.title("📊 Dashboard Project Bach")
 
+# KPI Top
 m1, m2, m3, m4 = st.columns(4)
 m1.metric("Total Order", f"{len(df_f)}")
 m2.metric("Total Qty", f"{int(df_f['QTY'].sum()):,}")
@@ -114,7 +107,7 @@ m4.metric("Site Aktif", df_f['WH TUJUAN'].nunique())
 
 st.markdown("---")
 
-# Tren Harian
+# Grafik Tren
 st.subheader("📈 Tren Permintaan Harian")
 if not df_f.empty:
     trend_data = df_f.groupby('Tgl_Str').size().reset_index(name='Requests')
@@ -122,11 +115,11 @@ if not df_f.empty:
     fig_tr.update_traces(textposition="top center")
     st.plotly_chart(fig_tr, use_container_width=True)
 else:
-    st.warning("Data tidak ditemukan untuk filter ini.")
+    st.info("Silakan pilih filter untuk melihat tren data.")
 
 st.markdown("---")
 
-# Top Site & Top Item
+# Bar Chart
 c1, c2 = st.columns(2)
 with c1:
     st.subheader("🏢 Top Site Request (QTY)")
@@ -134,6 +127,7 @@ with c1:
         top_site = df_f.groupby('WH TUJUAN')['QTY'].sum().sort_values(ascending=False).head(8).reset_index()
         fig_site = px.bar(top_site, x='WH TUJUAN', y='QTY', text_auto=',', color='QTY', color_continuous_scale='Blues')
         st.plotly_chart(fig_site, use_container_width=True)
+
 with c2:
     st.subheader("🔝 Top Requested Items")
     if not df_f.empty:
@@ -143,7 +137,7 @@ with c2:
 
 st.markdown("---")
 
-# Tables
+# Tabel Data
 st.subheader("⚠️ Highlight Outstanding")
 df_out = df_f[~df_f['STATUS'].isin(['DELIVERED', 'CANCEL'])]
 st.dataframe(df_out[['TANGGAL', 'PROJECT', 'WH TUJUAN', 'ITEM NAME', 'QTY', 'STATUS']], use_container_width=True, hide_index=True)
@@ -153,6 +147,6 @@ st.dataframe(df_f[['TANGGAL', 'PROJECT', 'WH TUJUAN', 'ITEM NAME', 'QTY', 'TOTAL
 
 st.markdown("---")
 
-# Map
+# Map Paling Bawah
 st.subheader("📍 Area Operasional Project")
 st.map(df_f[df_f['lat'] != 0][['lat', 'lon']], zoom=3, height=400)
