@@ -123,12 +123,6 @@ with c_item:
 
 st.markdown("---")
 
-# ROW 3: MAP (DIPINDAH KE BAWAH SEBAGAI PELENGKAP)
-with st.expander("📍 Lihat Peta Sebaran Wilayah", expanded=True):
-    st.map(df_f[df_f['lat'] != 0][['lat', 'lon']], zoom=3, height=350)
-
-st.markdown("---")
-
 # ROW 4: TABLES
 st.subheader("⚠️ Highlight Outstanding")
 df_out = df_f[~df_f['STATUS'].isin(['DELIVERED', 'CANCEL'])]
@@ -136,3 +130,9 @@ st.dataframe(df_out[['TANGGAL', 'PROJECT', 'WH TUJUAN', 'ITEM NAME', 'QTY', 'STA
 
 st.subheader("📋 Detail Movement Record")
 st.dataframe(df_f[['TANGGAL', 'PROJECT', 'WH TUJUAN', 'ITEM NAME', 'QTY', 'TOTAL COST', 'STATUS']], use_container_width=True, hide_index=True)
+
+st.markdown("---")
+
+# ROW 3: MAP (DIPINDAH KE BAWAH SEBAGAI PELENGKAP)
+with st.expander("📍 Lihat Peta Sebaran Wilayah", expanded=True):
+    st.map(df_f[df_f['lat'] != 0][['lat', 'lon']], zoom=3, height=350)
