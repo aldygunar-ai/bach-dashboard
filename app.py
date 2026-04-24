@@ -7,6 +7,7 @@ import plotly.express as px
 # 1. KONFIGURASI HALAMAN
 st.set_page_config(page_title="Dashboard Project Bach", layout="wide")
 
+# CSS UI/UX THEME MODERN PT BACH
 st.markdown("""
     <style>
     .main { background-color: #F8F9FA; }
@@ -22,7 +23,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# 2. LOAD DATA
+# 2. LOAD DATA (StatusPerPLTD)
 URL_OPS = "https://bachmulti-my.sharepoint.com/:x:/g/personal/prabawa_bachgroup_co_id/IQDpLV2xOcHmS51kfDxWqHQAAUHHovDCqOPtICGu3HUp6nc?download=1"
 URL_DAS = "https://bachmulti-my.sharepoint.com/:x:/g/personal/prabawa_bachgroup_co_id/IQBxJHUjgIjQTooUQPRp14iZAUy5KIiRVxLFRW-z8X17lDY?download=1"
 
@@ -58,41 +59,32 @@ def load_data():
 
 df_raw = load_data()
 
-# --- 3. SIDEBAR & LOGIKA RESET (VERSI PERBAIKAN TOTAL) ---
+# --- 3. LOGIKA CLEAR FILTER (DYNAMIC KEY TRICK) ---
+# Menggunakan counter agar key widget berubah saat reset ditekan
+if 'reset_count' not in st.session_state:
+    st.session_state.reset_count = 0
+
+def handle_reset():
+    st.session_state.reset_count += 1
+
 with st.sidebar:
     st.markdown('<div class="sidebar-title">PT BACH MULTI GLOBAL</div>', unsafe_allow_html=True)
     
-    # Inisialisasi default jika belum ada di session_state
-    if 'sel_proj' not in st.session_state:
-        st.session_state.sel_proj = list(df_raw['PROJECT'].unique())
-    if 'sel_year' not in st.session_state:
-        st.session_state.sel_year = ["2026"]
-    if 'sel_month' not in st.session_state:
-        st.session_state.sel_month = []
-    if 'sel_stat' not in st.session_state:
-        st.session_state.sel_stat = []
-    if 'sel_site' not in st.session_state:
-        st.session_state.sel_site = []
-
-    # Pasang widget dengan session_state
-    sel_proj = st.multiselect("Project", df_raw['PROJECT'].unique(), key='sel_proj')
-    sel_year = st.multiselect("Tahun", sorted(df_raw['Tahun'].unique(), reverse=True), key='sel_year')
-    sel_month = st.multiselect("Bulan", df_raw['Bulan'].unique(), key='sel_month')
-    sel_stat = st.multiselect("Status", sorted(df_raw['STATUS'].unique()), key='sel_stat')
-    sel_site = st.multiselect("Site (WH Tujuan)", sorted(df_raw['WH TUJUAN'].dropna().unique()), key='sel_site')
+    # Key dibuat unik menggunakan reset_count
+    c = st.session_state.reset_count
+    
+    sel_proj = st.multiselect("Project", df_raw['PROJECT'].unique(), 
+                              default=df_raw['PROJECT'].unique(), key=f'proj_{c}')
+    sel_year = st.multiselect("Tahun", sorted(df_raw['Tahun'].unique(), reverse=True), 
+                              default=["2026"], key=f'year_{c}')
+    sel_month = st.multiselect("Bulan", df_raw['Bulan'].unique(), key=f'month_{c}')
+    sel_stat = st.multiselect("Status", sorted(df_raw['STATUS'].unique()), key=f'stat_{c}')
+    sel_site = st.multiselect("Site (WH Tujuan)", sorted(df_raw['WH TUJUAN'].dropna().unique()), key=f'site_{c}')
     
     st.divider()
-    
-    # Tombol Reset yang membersihkan isi dropdown secara fisik
-    if st.button("🔄 Clear All Filters", use_container_width=True):
-        st.session_state.sel_proj = []
-        st.session_state.sel_year = []
-        st.session_state.sel_month = []
-        st.session_state.sel_stat = []
-        st.session_state.sel_site = []
-        st.rerun()
+    st.button("🔄 Clear All Filters", on_click=handle_reset, use_container_width=True)
 
-# APLIKASI FILTER
+# EKSEKUSI FILTER DATA
 df_f = df_raw[df_raw['PROJECT'].isin(sel_proj)]
 if sel_year: df_f = df_f[df_f['Tahun'].isin(sel_year)]
 if sel_month: df_f = df_f[df_f['Bulan'].isin(sel_month)]
@@ -100,7 +92,7 @@ if sel_stat: df_f = df_f[df_f['STATUS'].isin(sel_stat)]
 if sel_site: df_f = df_f[df_f['WH TUJUAN'].isin(sel_site)]
 
 # --- 4. DASHBOARD CONTENT ---
-st.title("📊 Dashboard Project Bach") # Judul Baru
+st.title("📊 Dashboard Project Bach")
 
 # KPI ROW
 m1, m2, m3, m4 = st.columns(4)
@@ -111,7 +103,7 @@ m4.metric("Site Aktif", df_f['WH TUJUAN'].nunique())
 
 st.markdown("---")
 
-# ROW 1: TREN HARIAN
+# ROW 1: TREN HARIAN (INTERAKTIF & INFO LENGKAP)
 st.subheader("📈 Tren Permintaan Harian")
 trend_data = df_f.groupby('Tgl_Str').size().reset_index(name='Requests')
 fig_tr = px.line(trend_data, x='Tgl_Str', y='Requests', markers=True, text='Requests', color_discrete_sequence=['#0E2F56'])
@@ -121,7 +113,7 @@ st.plotly_chart(fig_tr, use_container_width=True)
 
 st.markdown("---")
 
-# ROW 2: TOP SITE & TOP ITEM
+# ROW 2: TOP SITE & TOP ITEM (FORMAT VERTIKAL AGAR MUDAH DIBACA)
 c_site, c_item = st.columns(2)
 with c_site:
     st.subheader("🏢 Top Site Request (QTY)")
@@ -139,16 +131,16 @@ with c_item:
 
 st.markdown("---")
 
-# ROW 3: TABLES
+# ROW 3: TABLES (HIGHLIGHT & DETAIL)
 st.subheader("⚠️ Highlight Outstanding")
 df_out = df_f[~df_f['STATUS'].isin(['DELIVERED', 'CANCEL'])]
 st.dataframe(df_out[['TANGGAL', 'PROJECT', 'WH TUJUAN', 'ITEM NAME', 'QTY', 'STATUS']], use_container_width=True, hide_index=True)
 
-st.subheader("📋 Detail Movement Record")
+st.subheader("📋 Detail Movement Record & Status")
 st.dataframe(df_f[['TANGGAL', 'PROJECT', 'WH TUJUAN', 'ITEM NAME', 'QTY', 'TOTAL COST', 'STATUS']], use_container_width=True, hide_index=True)
 
 st.markdown("---")
 
-# ROW 4: MAP (PALING BAWAH)
+# ROW 4: MAP (PALING BAWAH SESUAI REKOMENDASI)
 st.subheader("📍 Area Operasional Project")
 st.map(df_f[df_f['lat'] != 0][['lat', 'lon']], zoom=3, height=400)
