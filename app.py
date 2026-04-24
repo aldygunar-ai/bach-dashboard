@@ -5,7 +5,7 @@ import io
 import plotly.express as px
 
 # 1. KONFIGURASI HALAMAN
-st.set_page_config(page_title="Bach Logistics Dashboard", layout="wide")
+st.set_page_config(page_title="Dashboard Project Bach", layout="wide")
 
 st.markdown("""
     <style>
@@ -58,23 +58,24 @@ def load_data():
 
 df_raw = load_data()
 
-# --- 3. LOGIKA CLEAR FILTER (FIXED) ---
-def reset_filters():
-    for key in st.session_state.keys():
-        del st.session_state[key]
-    st.rerun()
-
+# --- 3. SIDEBAR & LOGIKA RESET ---
 with st.sidebar:
     st.markdown('<div class="sidebar-title">PT BACH MULTI GLOBAL</div>', unsafe_allow_html=True)
     
-    sel_proj = st.multiselect("Project", df_raw['PROJECT'].unique(), default=df_raw['PROJECT'].unique(), key='f1')
-    sel_year = st.multiselect("Tahun", sorted(df_raw['Tahun'].unique(), reverse=True), default=["2026"], key='f2')
-    sel_month = st.multiselect("Bulan", df_raw['Bulan'].unique(), key='f3')
-    sel_stat = st.multiselect("Status", sorted(df_raw['STATUS'].unique()), key='f4')
-    sel_site = st.multiselect("Site (WH Tujuan)", sorted(df_raw['WH TUJUAN'].dropna().unique()), key='f5')
+    # Gunakan key unik agar bisa di-reset melalui session_state
+    sel_proj = st.multiselect("Project", df_raw['PROJECT'].unique(), default=df_raw['PROJECT'].unique(), key='sel_proj')
+    sel_year = st.multiselect("Tahun", sorted(df_raw['Tahun'].unique(), reverse=True), default=["2026"], key='sel_year')
+    sel_month = st.multiselect("Bulan", df_raw['Bulan'].unique(), key='sel_month')
+    sel_stat = st.multiselect("Status", sorted(df_raw['STATUS'].unique()), key='sel_stat')
+    sel_site = st.multiselect("Site (WH Tujuan)", sorted(df_raw['WH TUJUAN'].dropna().unique()), key='sel_site')
     
     st.divider()
-    st.button("🔄 Clear All Filters", on_click=reset_filters, use_container_width=True)
+    
+    # FIX: Logika Clear All Filters tanpa callback yang menyebabkan error
+    if st.button("🔄 Clear All Filters", use_container_width=True):
+        for key in st.session_state.keys():
+            del st.session_state[key]
+        st.rerun()
 
 # APLIKASI FILTER
 df_f = df_raw[df_raw['PROJECT'].isin(sel_proj)]
@@ -84,7 +85,7 @@ if sel_stat: df_f = df_f[df_f['STATUS'].isin(sel_stat)]
 if sel_site: df_f = df_f[df_f['WH TUJUAN'].isin(sel_site)]
 
 # --- 4. DASHBOARD CONTENT ---
-st.title("📦 Logistics Command Center")
+st.title("📊 Dashboard Project Bach") # Judul Baru
 
 # KPI ROW
 m1, m2, m3, m4 = st.columns(4)
@@ -95,7 +96,7 @@ m4.metric("Site Aktif", df_f['WH TUJUAN'].nunique())
 
 st.markdown("---")
 
-# ROW 1: TREN HARIAN (LEBIH LEBAR)
+# ROW 1: TREN HARIAN
 st.subheader("📈 Tren Permintaan Harian")
 trend_data = df_f.groupby('Tgl_Str').size().reset_index(name='Requests')
 fig_tr = px.line(trend_data, x='Tgl_Str', y='Requests', markers=True, text='Requests', color_discrete_sequence=['#0E2F56'])
@@ -105,7 +106,7 @@ st.plotly_chart(fig_tr, use_container_width=True)
 
 st.markdown("---")
 
-# ROW 2: TOP SITE & TOP ITEM (BAR VERTIKAL AGAR TIDAK PADAT)
+# ROW 2: TOP SITE & TOP ITEM
 c_site, c_item = st.columns(2)
 with c_site:
     st.subheader("🏢 Top Site Request (QTY)")
@@ -123,7 +124,7 @@ with c_item:
 
 st.markdown("---")
 
-# ROW 4: TABLES
+# ROW 3: TABLES
 st.subheader("⚠️ Highlight Outstanding")
 df_out = df_f[~df_f['STATUS'].isin(['DELIVERED', 'CANCEL'])]
 st.dataframe(df_out[['TANGGAL', 'PROJECT', 'WH TUJUAN', 'ITEM NAME', 'QTY', 'STATUS']], use_container_width=True, hide_index=True)
@@ -133,6 +134,6 @@ st.dataframe(df_f[['TANGGAL', 'PROJECT', 'WH TUJUAN', 'ITEM NAME', 'QTY', 'TOTAL
 
 st.markdown("---")
 
-# ROW 3: MAP (DIPINDAH KE BAWAH SEBAGAI PELENGKAP)
-with st.expander("📍 Lihat Peta Sebaran Wilayah", expanded=True):
-    st.map(df_f[df_f['lat'] != 0][['lat', 'lon']], zoom=3, height=350)
+# ROW 4: MAP (PALING BAWAH)
+st.subheader("📍 Area Operasional Project")
+st.map(df_f[df_f['lat'] != 0][['lat', 'lon']], zoom=3, height=400)
