@@ -115,7 +115,7 @@ if sel_stat: df_f = df_f[df_f['STATUS'].isin(sel_stat)]
 if sel_site: df_f = df_f[df_f['WH TUJUAN'].isin(sel_site)]
 
 # --- 4. MAIN CONTENT: LOGISTICS COMMAND CENTER ---
-st.title("📦 Logistics Command Center")
+st.title("📦 Dashboard Project Bach")
 
 # KPI SUMMARY ROW
 m1, m2, m3, m4, m5 = st.columns(5)
