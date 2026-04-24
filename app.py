@@ -58,23 +58,38 @@ def load_data():
 
 df_raw = load_data()
 
-# --- 3. SIDEBAR & LOGIKA RESET ---
+# --- 3. SIDEBAR & LOGIKA RESET (VERSI PERBAIKAN TOTAL) ---
 with st.sidebar:
     st.markdown('<div class="sidebar-title">PT BACH MULTI GLOBAL</div>', unsafe_allow_html=True)
     
-    # Gunakan key unik agar bisa di-reset melalui session_state
-    sel_proj = st.multiselect("Project", df_raw['PROJECT'].unique(), default=df_raw['PROJECT'].unique(), key='sel_proj')
-    sel_year = st.multiselect("Tahun", sorted(df_raw['Tahun'].unique(), reverse=True), default=["2026"], key='sel_year')
+    # Inisialisasi default jika belum ada di session_state
+    if 'sel_proj' not in st.session_state:
+        st.session_state.sel_proj = list(df_raw['PROJECT'].unique())
+    if 'sel_year' not in st.session_state:
+        st.session_state.sel_year = ["2026"]
+    if 'sel_month' not in st.session_state:
+        st.session_state.sel_month = []
+    if 'sel_stat' not in st.session_state:
+        st.session_state.sel_stat = []
+    if 'sel_site' not in st.session_state:
+        st.session_state.sel_site = []
+
+    # Pasang widget dengan session_state
+    sel_proj = st.multiselect("Project", df_raw['PROJECT'].unique(), key='sel_proj')
+    sel_year = st.multiselect("Tahun", sorted(df_raw['Tahun'].unique(), reverse=True), key='sel_year')
     sel_month = st.multiselect("Bulan", df_raw['Bulan'].unique(), key='sel_month')
     sel_stat = st.multiselect("Status", sorted(df_raw['STATUS'].unique()), key='sel_stat')
     sel_site = st.multiselect("Site (WH Tujuan)", sorted(df_raw['WH TUJUAN'].dropna().unique()), key='sel_site')
     
     st.divider()
     
-    # FIX: Logika Clear All Filters tanpa callback yang menyebabkan error
+    # Tombol Reset yang membersihkan isi dropdown secara fisik
     if st.button("🔄 Clear All Filters", use_container_width=True):
-        for key in st.session_state.keys():
-            del st.session_state[key]
+        st.session_state.sel_proj = []
+        st.session_state.sel_year = []
+        st.session_state.sel_month = []
+        st.session_state.sel_stat = []
+        st.session_state.sel_site = []
         st.rerun()
 
 # APLIKASI FILTER
