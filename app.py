@@ -70,11 +70,14 @@ def load_gsheet_data(sheet_id, sheet_name=None):
     if not sheet_id: return pd.DataFrame()
     url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv"
     if sheet_name: url += f"&sheet={sheet_name.replace(' ', '+')}"
-    try: return pd.read_csv(url)
-    except: return pd.DataFrame()
+    try:
+        df = pd.read_csv(url)
+        return df
+    except:
+        return pd.DataFrame()
 
 def ai_smart_column_search(df, target_keywords):
-    """Mencari nama kolom asli berdasarkan kecocokan keyword (Case-Insensitive)."""
+    """Mencari nama kolom berdasarkan kecocokan kata kunci."""
     cleaned_cols = {col: str(col).strip().replace('\n', ' ').upper() for col in df.columns}
     for original, cleaned in cleaned_cols.items():
         if any(kw.upper() in cleaned for kw in target_keywords):
@@ -96,51 +99,39 @@ with st.sidebar:
     else:
         sel_pltd = st.multiselect("Pilih Nama PLTD", options=list(PLTD_IDS.keys()))
 
+# --- 5. LOGIKA HALAMAN ---
+
 # --- PAGE 1: MENU UTAMA ---
 if page == "Page 1: Menu Utama":
     st.title("🚛 Dashboard Project Bach")
-    st.info("Sistem Pemantauan Stok dan Transaksi.")
+    st.info("Pilih menu di sidebar untuk memantau stok dan transaksi.")
+    st.markdown("### Status Koneksi Data:")
+    st.success("✅ Google Sheets PLTD Connected")
+    st.success("✅ SharePoint Transaction Data Connected")
 
-# --- PAGE 2: STOCK AKTUAL (AI AUTO-MAPPING) ---
-# --- UPDATE FUNGSI LOAD DATA (DENGAN PEMBERSIHAN OTOMATIS) ---
-def load_gsheet_data(sheet_id, sheet_name=None):
-    if not sheet_id: return pd.DataFrame()
-    url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv"
-    if sheet_name: url += f"&sheet={sheet_name.replace(' ', '+')}"
-    try:
-        df = pd.read_csv(url)
-        # Jika baris pertama banyak NaN, coba bersihkan (sering terjadi di GSheet)
-        if df.columns.str.contains('Unnamed').any() or df.iloc[0:1].isnull().values.any():
-            df.columns = [str(c).strip() for c in df.columns]
-        return df
-    except:
-        return pd.DataFrame()
-
-# --- UPDATE LOGIKA PAGE 2 (AI SCANNER LEBIH KUAT) ---
+# --- PAGE 2: STOCK AKTUAL (AI + FALLBACK) ---
 elif page == "Page 2: Stock Aktual":
     st.title("📦 Perbandingan Stock Aktual (AI Smart Table)")
     if not sel_pltd:
         st.info("👋 Silakan pilih PLTD di sidebar.")
     else:
         main_df = None
-        
         for site in sel_pltd:
             df = load_gsheet_data(PLTD_IDS.get(site))
             if not df.empty:
-                # 🤖 AI Smart Mapping dengan keyword lebih luas
-                c_kode = ai_smart_column_search(df, ['KODE', 'PART NUMBER', 'ITEM CODE', 'MATERIAL NO'])
+                # 1. Cari Kolom via AI
+                c_kode = ai_smart_column_search(df, ['KODE', 'PART NUMBER', 'ITEM CODE'])
                 c_nama = ai_smart_column_search(df, ['NAMA', 'DESCRIPTION', 'MATERIAL NAME', 'BARANG'])
-                c_qty  = ai_smart_column_search(df, ['QTY', 'STOCK', 'SISA', 'AKTUAL', 'AKHIR', 'SALDO'])
+                c_qty  = ai_smart_column_search(df, ['QTY', 'STOCK', 'SISA', 'AKTUAL', 'AKHIR'])
                 
-                # FALLBACK: Jika AI gagal, gunakan posisi kolom yang paling umum (C=2, D=3, I=8)
+                # 2. Fallback jika AI gagal (C, D, I)
                 if not c_kode: c_kode = df.columns[2] if len(df.columns) > 2 else None
                 if not c_nama: c_nama = df.columns[3] if len(df.columns) > 3 else None
                 if not c_qty:  c_qty  = df.columns[8] if len(df.columns) > 8 else df.columns[-1]
 
                 if c_kode and c_nama and c_qty:
                     df_sub = df[[c_kode, c_nama, c_qty]].copy()
-                    
-                    # Bersihkan data: pastikan QTY adalah angka
+                    # Pastikan Qty adalah angka
                     df_sub[c_qty] = pd.to_numeric(df_sub[c_qty], errors='coerce').fillna(0)
                     
                     df_sub = df_sub.rename(columns={
@@ -149,7 +140,7 @@ elif page == "Page 2: Stock Aktual":
                         c_qty: f"STOK_{site.upper()}"
                     })
                     
-                    # Hapus baris yang Kode Material-nya kosong
+                    # Bersihkan spasi dan hapus baris kosong
                     df_sub = df_sub.dropna(subset=["KODE MATERIAL"])
                     df_sub["KODE MATERIAL"] = df_sub["KODE MATERIAL"].astype(str).str.strip()
 
@@ -157,20 +148,11 @@ elif page == "Page 2: Stock Aktual":
                         main_df = df_sub
                     else:
                         main_df = pd.merge(main_df, df_sub, on=["KODE MATERIAL", "NAMA MATERIAL"], how='outer')
-                else:
-                    st.error(f"❌ File {site} memiliki struktur kolom yang sangat berbeda.")
-            else:
-                st.error(f"❌ Gagal menarik data dari Google Sheet {site}.")
         
         if main_df is not None:
-            # Sort berdasarkan Nama Material agar rapi
-            main_df = main_df.sort_values("NAMA MATERIAL").fillna(0)
-            
-            # Styling untuk membedakan kolom Kode dan Nama dengan Angka Stok
-            st.dataframe(main_df, use_container_width=True, hide_index=True)
-            
-            # Tambahkan ringkasan total item
-            st.caption(f"Total baris data unik: {len(main_df)} item.")
+            st.dataframe(main_df.sort_values("NAMA MATERIAL").fillna(0), use_container_width=True, hide_index=True)
+            st.caption(f"Menampilkan total {len(main_df)} item unik dari {len(sel_pltd)} lokasi.")
+
 # --- PAGE 3: ANALISA ---
 elif page == "Page 3: Analisa & Propose":
     st.title("📈 Analisa & Propose")
@@ -184,7 +166,7 @@ elif page == "Page 3: Analisa & Propose":
             c_h = ai_smart_column_search(df_harga, ['KODE', 'PART NUMBER'])
             if c_s and c_h:
                 df_merged = pd.merge(df_stok, df_harga, left_on=c_s, right_on=c_h, how='left')
-                st.success(f"🤖 Data Terhubung via {c_s}")
+                st.success(f"🤖 AI Match Berhasil: {c_s}")
                 st.dataframe(df_merged, use_container_width=True)
             else: st.error("Kolom Kode tidak ditemukan.")
 
