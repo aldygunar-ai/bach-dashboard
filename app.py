@@ -17,11 +17,10 @@ st.markdown(f"""
         margin-bottom: 25px; padding: 10px; border-bottom: 1px solid #ffffff33;
     }}
     [data-testid="stSidebar"] label p {{ color: white !important; font-weight: 500 !important; }}
-    div[data-testid="stMetricValue"] {{ font-size: 28px; font-weight: 800; color: {TEMA_BIRU}; }}
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. DATA HAFALAN PREVENTIVE (Kamus Utama) ---
+# --- 2. DATA HAFALAN PREVENTIVE ---
 LIST_KODE_PREVENTIVE = [
     'LF3325', 'LF777', '2020PM V30-C', 'FS1006', 'WF2076', '3629140', 
     'AF872', 'AF25278', 'AHO1135', '5413003', '3015257', '5412990',
@@ -59,7 +58,6 @@ def load_gsheet_data(sheet_id):
 with st.sidebar:
     st.markdown('<div class="sidebar-title">PT BACH MULTI GLOBAL</div>', unsafe_allow_html=True)
     page = st.radio("Menu Dashboard", ["Page 1: Menu Utama", "Page 2: Stock Aktual"])
-    
     st.divider()
     sel_pltd = st.multiselect("Pilih Nama PLTD", options=list(PLTD_IDS.keys()))
 
@@ -67,10 +65,11 @@ with st.sidebar:
 
 if page == "Page 1: Menu Utama":
     st.title("🚛 Dashboard Project Bach")
-    st.info("Gunakan navigasi di samping untuk melihat stok aktual per PLTD.")
+    st.info("Pilih PLTD di sidebar untuk melihat perbandingan stok.")
 
 elif page == "Page 2: Stock Aktual":
-    st.title("📦 Perbandingan Stock Aktual")
+    st.title("📦 Perbandingan Stock Aktual (Normalized)")
+    
     if not sel_pltd:
         st.info("👋 Silakan pilih PLTD di sidebar.")
     else:
@@ -79,22 +78,21 @@ elif page == "Page 2: Stock Aktual":
             df = load_gsheet_data(PLTD_IDS.get(site))
             if not df.empty:
                 try:
-                    # Ambil A=Kode, C=Nama, D=Type, I=Qty
-                    # Index: A=0, C=2, D=3, I=8
+                    # Ambil A=0(Kode), C=2(Nama), D=3(Type), I=8(Qty)
                     df_sub = df.iloc[:, [0, 2, 3, 8]].copy()
                     df_sub.columns = ['KODE', 'NAMA MATERIAL', 'TYPE MATERIAL', 'QTY']
                     
-                    # Bersihkan data
-                    df_sub['KODE'] = df_sub['KODE'].astype(str).str.strip().fillna('')
+                    # --- NORMALISASI DATA (KUNCI AGAR TIDAK BERANTAKAN) ---
+                    df_sub['KODE'] = df_sub['KODE'].astype(str).str.strip().str.upper()
+                    df_sub['NAMA MATERIAL'] = df_sub['NAMA MATERIAL'].astype(str).str.strip().str.upper()
+                    df_sub['TYPE MATERIAL'] = df_sub['TYPE MATERIAL'].astype(str).str.strip().str.upper()
                     df_sub['QTY'] = pd.to_numeric(df_sub['QTY'], errors='coerce').fillna(0)
                     
                     # Klasifikasi Berdasarkan Hafalan
                     def classify_logic(row):
-                        kode_val = str(row['KODE']).upper()
-                        # Jika kode kosong, langsung lempar ke Corrective
-                        if not kode_val or kode_val == 'NAN':
+                        kode_val = str(row['KODE'])
+                        if not kode_val or kode_val == 'NAN' or kode_val == '':
                             return 'CORRECTIVE'
-                        # Cek apakah kode material ada dalam daftar Preventive
                         if any(p.upper() in kode_val for p in LIST_KODE_PREVENTIVE):
                             return 'PREVENTIVE'
                         return 'CORRECTIVE'
@@ -108,7 +106,7 @@ elif page == "Page 2: Stock Aktual":
         if all_dfs:
             df_final = pd.concat(all_dfs, ignore_index=True)
             
-            # Pivot untuk header PLTD ke samping
+            # Pivot Table: Menggabungkan data yang Nama & Type-nya sama
             df_pivot = df_final.pivot_table(
                 index=['KODE', 'NAMA MATERIAL', 'TYPE MATERIAL', 'KATEGORI'],
                 columns='PLTD',
@@ -116,17 +114,22 @@ elif page == "Page 2: Stock Aktual":
                 aggfunc='sum'
             ).reset_index().fillna(0)
 
-            # Sembunyikan kolom KODE (Kolom A) sebelum ditampilkan
-            # Tapi tetap dipisahkan berdasarkan KATEGORI
-
+            # Bagian Tabel PM
             st.subheader("🛠️ KELOMPOK: PREVENTIVE MAINTENANCE")
             df_p = df_pivot[df_pivot['KATEGORI'] == 'PREVENTIVE'].drop(columns=['KATEGORI', 'KODE'])
-            st.dataframe(df_p, use_container_width=True, hide_index=True)
+            if not df_p.empty:
+                st.dataframe(df_p, use_container_width=True, hide_index=True)
+            else:
+                st.write("Tidak ada data Preventive.")
 
             st.markdown("---")
 
+            # Bagian Tabel CM
             st.subheader("🆘 KELOMPOK: CORRECTIVE MAINTENANCE")
             df_c = df_pivot[df_pivot['KATEGORI'] == 'CORRECTIVE'].drop(columns=['KATEGORI', 'KODE'])
-            st.dataframe(df_c, use_container_width=True, hide_index=True)
+            if not df_c.empty:
+                st.dataframe(df_c, use_container_width=True, hide_index=True)
+            else:
+                st.write("Tidak ada data Corrective.")
         else:
             st.warning("Data tidak tersedia.")
