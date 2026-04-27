@@ -22,7 +22,15 @@ st.markdown(f"""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. DATABASE LINK ---
+# --- 2. DATA HAFALAN PREVENTIVE ---
+LIST_KODE_PREVENTIVE = [
+    'LF3325', 'LF777', '2020PM V30-C', 'FS1006', 'WF2076', '3629140', 
+    'AF872', 'AF25278', 'AHO1135', '5413003', '3015257', '5412990',
+    '5PK889', '21-3107', '25471145', '23PK2032', '21-3110', '25477108',
+    'RIMULA R4 X 15W-40'
+]
+
+# --- 3. DATABASE LINK ---
 PLTD_IDS = {
     "Pemaron": "1HN-X9OhLTGo5Ieu2uzBa6VHh0UlFdGTiw56yOIX5VgI",
     "Mangoli": "1agNRbhpUJRqsA91eDlDq49BKpbW5x3v-2DiAGlbdq9s",
@@ -41,7 +49,7 @@ ID_GABUNGAN_D365 = "1aZZnnBjSybgzEgUECdLSCaPJ_rMKNHJmfGEwetOARbs"
 URL_OPS = "https://bachmulti-my.sharepoint.com/:x:/g/personal/prabawa_bachgroup_co_id/IQDpLV2xOcHmS51kfDxWqHQAAUHHovDCqOPtICGu3HUp6nc?download=1"
 URL_DAS = "https://bachmulti-my.sharepoint.com/:x:/g/personal/prabawa_bachgroup_co_id/IQBxJHUjgIjQTooUQPRp14iZAUy5KIiRVxLFRW-z8X17lDY?download=1"
 
-# --- 3. HELPER FUNCTIONS ---
+# --- 4. HELPER FUNCTIONS ---
 @st.cache_data
 def load_transaction_data():
     headers = {'User-Agent': 'Mozilla/5.0'}
@@ -68,13 +76,13 @@ def load_gsheet_data(sheet_id):
     url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv"
     try:
         df = pd.read_csv(url)
-        # Hapus kolom kosong agar tidak merusak indexing
-        df = df.loc[:, ~df.columns.str.contains('^Unnamed')]
+        # Hilangkan spasi di nama kolom
+        df.columns = [str(c).strip() for c in df.columns]
         return df
     except:
         return pd.DataFrame()
 
-# --- 4. SIDEBAR ---
+# --- 5. SIDEBAR ---
 with st.sidebar:
     st.markdown('<div class="sidebar-title">PT BACH MULTI GLOBAL</div>', unsafe_allow_html=True)
     page = st.radio("Menu Dashboard", ["Page 1: Menu Utama", "Page 2: Stock Aktual", "Page 3: Analisa & Propose", "Page 4: Monitoring Transaksi"])
@@ -86,67 +94,71 @@ with st.sidebar:
     else:
         sel_pltd = st.multiselect("Pilih Nama PLTD", options=list(PLTD_IDS.keys()))
 
-# --- 5. LOGIKA HALAMAN ---
+# --- 6. LOGIKA HALAMAN ---
 
 if page == "Page 1: Menu Utama":
     st.title("🚛 Dashboard Project Bach")
-    st.info("Pilih menu di sidebar untuk memantau stok.")
+    st.info("Selamat Datang. Gunakan navigasi di samping untuk memantau stok.")
 
 elif page == "Page 2: Stock Aktual":
     st.title("📦 Perbandingan Stock Aktual")
     if not sel_pltd:
         st.info("👋 Silakan pilih PLTD di sidebar.")
     else:
-        full_data = []
-        
+        all_dfs = []
         for site in sel_pltd:
             df = load_gsheet_data(PLTD_IDS.get(site))
             if not df.empty:
                 try:
-                    # Sesuai instruksi: Kolom C (Index 2) = Nama & Type, Kolom I (Index 8) = QTY
-                    # Kita ambil kolom 0 (Kode) juga agar bisa merge dengan benar
+                    # Ambil Kolom A (0), C (2), I (8)
                     df_sub = df.iloc[:, [0, 2, 8]].copy()
                     df_sub.columns = ['KODE', 'NAMA_TYPE', 'QTY']
                     
-                    # Konversi QTY ke angka agar tidak error saat diproses
+                    # Bersihkan data
+                    df_sub['KODE'] = df_sub['KODE'].astype(str).str.strip()
                     df_sub['QTY'] = pd.to_numeric(df_sub['QTY'], errors='coerce').fillna(0)
                     
-                    # Identifikasi Type (Preventive / Corrective) berdasarkan isi teks di kolom C
-                    df_sub['TYPE'] = df_sub['NAMA_TYPE'].apply(lambda x: 'PREVENTIVE' if 'PREVENTIVE' in str(x).upper() else 'CORRECTIVE')
+                    # LOGIKA HAFALAN PREVENTIVE
+                    def classify(row):
+                        kode_up = str(row['KODE']).upper()
+                        # Cek apakah ada bagian dari kode hafalan di dalam kolom KODE
+                        if any(prev_item.upper() in kode_up for prev_item in LIST_KODE_PREVENTIVE):
+                            return 'PREVENTIVE'
+                        return 'CORRECTIVE'
                     
-                    # Tambahkan identitas PLTD
+                    df_sub['KATEGORI'] = df_sub.apply(classify, axis=1)
                     df_sub['PLTD'] = site.upper()
-                    full_data.append(df_sub)
-                except Exception as e:
+                    all_dfs.append(df_sub)
+                except:
                     st.error(f"Format kolom di {site} tidak sesuai.")
 
-        if full_data:
-            df_combined = pd.concat(full_data, ignore_index=True)
+        if all_dfs:
+            df_final = pd.concat(all_dfs, ignore_index=True)
             
-            # Pivot data agar PLTD jadi header ke samping
-            df_pivot = df_combined.pivot_table(
-                index=['KODE', 'NAMA_TYPE', 'TYPE'], 
-                columns='PLTD', 
-                values='QTY', 
+            # Pivot untuk header PLTD ke samping
+            df_pivot = df_final.pivot_table(
+                index=['KODE', 'NAMA_TYPE', 'KATEGORI'],
+                columns='PLTD',
+                values='QTY',
                 aggfunc='sum'
             ).reset_index().fillna(0)
 
-            # --- TAMPILAN SPLIT ---
-            st.subheader("🛠️ Kelompok: PREVENTIVE MAINTENANCE")
-            df_prev = df_pivot[df_pivot['TYPE'] == 'PREVENTIVE']
-            st.dataframe(df_prev.drop(columns=['TYPE']), use_container_width=True, hide_index=True)
-            
-            st.divider()
-            
-            st.subheader("🆘 Kelompok: CORRECTIVE MAINTENANCE")
-            df_corr = df_pivot[df_pivot['TYPE'] == 'CORRECTIVE']
-            st.dataframe(df_corr.drop(columns=['TYPE']), use_container_width=True, hide_index=True)
+            # Tampilan Split
+            st.subheader("🛠️ PREVENTIVE MAINTENANCE")
+            df_p = df_pivot[df_pivot['KATEGORI'] == 'PREVENTIVE'].drop(columns=['KATEGORI'])
+            st.dataframe(df_p, use_container_width=True, hide_index=True)
+
+            st.markdown("---")
+
+            st.subheader("🆘 CORRECTIVE MAINTENANCE")
+            df_c = df_pivot[df_pivot['KATEGORI'] == 'CORRECTIVE'].drop(columns=['KATEGORI'])
+            st.dataframe(df_c, use_container_width=True, hide_index=True)
         else:
-            st.warning("Tidak ada data yang dapat ditampilkan.")
+            st.warning("Data tidak ditemukan.")
 
 elif page == "Page 3: Analisa & Propose":
     st.title("📈 Analisa & Propose")
-    st.info("Fitur Analisa Data.")
+    st.write("Fitur perbandingan stok dan kebutuhan.")
 
 elif page == "Page 4: Monitoring Transaksi":
     st.title("📊 Monitoring Transaksi")
