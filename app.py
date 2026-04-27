@@ -102,8 +102,23 @@ if page == "Page 1: Menu Utama":
     st.info("Sistem Pemantauan Stok dan Transaksi.")
 
 # --- PAGE 2: STOCK AKTUAL (AI AUTO-MAPPING) ---
+# --- UPDATE FUNGSI LOAD DATA (DENGAN PEMBERSIHAN OTOMATIS) ---
+def load_gsheet_data(sheet_id, sheet_name=None):
+    if not sheet_id: return pd.DataFrame()
+    url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv"
+    if sheet_name: url += f"&sheet={sheet_name.replace(' ', '+')}"
+    try:
+        df = pd.read_csv(url)
+        # Jika baris pertama banyak NaN, coba bersihkan (sering terjadi di GSheet)
+        if df.columns.str.contains('Unnamed').any() or df.iloc[0:1].isnull().values.any():
+            df.columns = [str(c).strip() for c in df.columns]
+        return df
+    except:
+        return pd.DataFrame()
+
+# --- UPDATE LOGIKA PAGE 2 (AI SCANNER LEBIH KUAT) ---
 elif page == "Page 2: Stock Aktual":
-    st.title("📦 Perbandingan Stock Aktual (AI Table)")
+    st.title("📦 Perbandingan Stock Aktual (AI Smart Table)")
     if not sel_pltd:
         st.info("👋 Silakan pilih PLTD di sidebar.")
     else:
@@ -112,39 +127,50 @@ elif page == "Page 2: Stock Aktual":
         for site in sel_pltd:
             df = load_gsheet_data(PLTD_IDS.get(site))
             if not df.empty:
-                # 🤖 AI Mencari Kolom yang Sesuai
-                c_kode = ai_smart_column_search(df, ['KODE', 'PART NUMBER'])
-                c_nama = ai_smart_column_search(df, ['NAMA MATERIAL', 'DESCRIPTION', 'NAMA BARANG'])
-                c_qty  = ai_smart_column_search(df, ['QTY', 'STOCK', 'SISA', 'AKTUAL'])
+                # 🤖 AI Smart Mapping dengan keyword lebih luas
+                c_kode = ai_smart_column_search(df, ['KODE', 'PART NUMBER', 'ITEM CODE', 'MATERIAL NO'])
+                c_nama = ai_smart_column_search(df, ['NAMA', 'DESCRIPTION', 'MATERIAL NAME', 'BARANG'])
+                c_qty  = ai_smart_column_search(df, ['QTY', 'STOCK', 'SISA', 'AKTUAL', 'AKHIR', 'SALDO'])
                 
+                # FALLBACK: Jika AI gagal, gunakan posisi kolom yang paling umum (C=2, D=3, I=8)
+                if not c_kode: c_kode = df.columns[2] if len(df.columns) > 2 else None
+                if not c_nama: c_nama = df.columns[3] if len(df.columns) > 3 else None
+                if not c_qty:  c_qty  = df.columns[8] if len(df.columns) > 8 else df.columns[-1]
+
                 if c_kode and c_nama and c_qty:
-                    # Ambil hanya 3 kolom yang ditemukan
                     df_sub = df[[c_kode, c_nama, c_qty]].copy()
                     
-                    # Standarisasi Nama Kolom Kunci agar bisa di-Merge
+                    # Bersihkan data: pastikan QTY adalah angka
+                    df_sub[c_qty] = pd.to_numeric(df_sub[c_qty], errors='coerce').fillna(0)
+                    
                     df_sub = df_sub.rename(columns={
                         c_kode: "KODE MATERIAL",
                         c_nama: "NAMA MATERIAL",
                         c_qty: f"STOK_{site.upper()}"
                     })
                     
-                    # Membersihkan data dari baris kosong
+                    # Hapus baris yang Kode Material-nya kosong
                     df_sub = df_sub.dropna(subset=["KODE MATERIAL"])
-                    
+                    df_sub["KODE MATERIAL"] = df_sub["KODE MATERIAL"].astype(str).str.strip()
+
                     if main_df is None:
                         main_df = df_sub
                     else:
-                        # Join otomatis ke samping berdasarkan Kode & Nama
                         main_df = pd.merge(main_df, df_sub, on=["KODE MATERIAL", "NAMA MATERIAL"], how='outer')
                 else:
-                    st.warning(f"⚠️ AI tidak menemukan kolom lengkap di {site}. Pastikan ada kolom Kode, Nama, dan Qty.")
+                    st.error(f"❌ File {site} memiliki struktur kolom yang sangat berbeda.")
             else:
-                st.error(f"❌ Gagal memuat data dari {site}.")
+                st.error(f"❌ Gagal menarik data dari Google Sheet {site}.")
         
         if main_df is not None:
-            # Mengisi data kosong dengan 0 agar tabel rapi
-            st.dataframe(main_df.fillna(0), use_container_width=True, hide_index=True)
-
+            # Sort berdasarkan Nama Material agar rapi
+            main_df = main_df.sort_values("NAMA MATERIAL").fillna(0)
+            
+            # Styling untuk membedakan kolom Kode dan Nama dengan Angka Stok
+            st.dataframe(main_df, use_container_width=True, hide_index=True)
+            
+            # Tambahkan ringkasan total item
+            st.caption(f"Total baris data unik: {len(main_df)} item.")
 # --- PAGE 3: ANALISA ---
 elif page == "Page 3: Analisa & Propose":
     st.title("📈 Analisa & Propose")
