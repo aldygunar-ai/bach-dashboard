@@ -19,7 +19,6 @@ st.markdown(f"""
     }}
     [data-testid="stSidebar"] label p {{ color: white !important; font-weight: 500 !important; }}
     div[data-testid="stMetricValue"] {{ font-size: 28px; font-weight: 800; color: {TEMA_BIRU}; }}
-    .stPlotlyChart {{ background-color: white; border-radius: 12px; padding: 15px; box-shadow: 0px 4px 12px rgba(0,0,0,0.05); }}
     </style>
     """, unsafe_allow_html=True)
 
@@ -60,29 +59,20 @@ def load_transaction_data():
     if not df.empty and 'TANGGAL' in df.columns:
         df['TANGGAL'] = pd.to_datetime(df['TANGGAL'], errors='coerce')
         df = df.dropna(subset=['TANGGAL'])
-        df['Tahun'] = df['TANGGAL'].dt.year.astype(str)
-        df['Bulan'] = df['TANGGAL'].dt.strftime('%B')
         df['Tgl_Str'] = df['TANGGAL'].dt.strftime('%Y-%m-%d')
     return df
 
 @st.cache_data(ttl=600)
-def load_gsheet_data(sheet_id, sheet_name=None):
+def load_gsheet_data(sheet_id):
     if not sheet_id: return pd.DataFrame()
     url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv"
-    if sheet_name: url += f"&sheet={sheet_name.replace(' ', '+')}"
     try:
         df = pd.read_csv(url)
+        # Hapus kolom kosong agar tidak merusak indexing
+        df = df.loc[:, ~df.columns.str.contains('^Unnamed')]
         return df
     except:
         return pd.DataFrame()
-
-def ai_smart_column_search(df, target_keywords):
-    """Mencari nama kolom berdasarkan kecocokan kata kunci."""
-    cleaned_cols = {col: str(col).strip().replace('\n', ' ').upper() for col in df.columns}
-    for original, cleaned in cleaned_cols.items():
-        if any(kw.upper() in cleaned for kw in target_keywords):
-            return original
-    return None
 
 # --- 4. SIDEBAR ---
 with st.sidebar:
@@ -93,115 +83,72 @@ with st.sidebar:
     if page == "Page 4: Monitoring Transaksi":
         df_raw = load_transaction_data()
         sel_proj = st.multiselect("Project", df_raw['PROJECT'].unique() if not df_raw.empty else [])
-        sel_year = st.multiselect("Tahun", sorted(df_raw['Tahun'].unique(), reverse=True) if not df_raw.empty else [])
-        sel_stat = st.multiselect("Status", sorted(df_raw['STATUS'].unique()) if not df_raw.empty else [])
-        sel_site = st.multiselect("Site (WH Tujuan)", sorted(df_raw['WH TUJUAN'].dropna().unique()) if not df_raw.empty else [])
     else:
         sel_pltd = st.multiselect("Pilih Nama PLTD", options=list(PLTD_IDS.keys()))
 
 # --- 5. LOGIKA HALAMAN ---
 
-# --- PAGE 1: MENU UTAMA ---
 if page == "Page 1: Menu Utama":
     st.title("🚛 Dashboard Project Bach")
-    st.info("Pilih menu di sidebar untuk memantau stok dan transaksi.")
-    st.markdown("### Status Koneksi Data:")
-    st.success("✅ Google Sheets PLTD Connected")
-    st.success("✅ SharePoint Transaction Data Connected")
+    st.info("Pilih menu di sidebar untuk memantau stok.")
 
-# --- PAGE 2: STOCK AKTUAL (AI + FALLBACK) ---
 elif page == "Page 2: Stock Aktual":
-    st.title("📦 Perbandingan Stock Aktual (AI Smart Table)")
+    st.title("📦 Perbandingan Stock Aktual")
     if not sel_pltd:
         st.info("👋 Silakan pilih PLTD di sidebar.")
     else:
-        main_df = None
+        full_data = []
+        
         for site in sel_pltd:
             df = load_gsheet_data(PLTD_IDS.get(site))
             if not df.empty:
-                # 1. Cari Kolom via AI
-                c_kode = ai_smart_column_search(df, ['KODE', 'PART NUMBER', 'ITEM CODE'])
-                c_nama = ai_smart_column_search(df, ['NAMA', 'DESCRIPTION', 'MATERIAL NAME', 'BARANG'])
-                c_qty  = ai_smart_column_search(df, ['QTY', 'STOCK', 'SISA', 'AKTUAL', 'AKHIR'])
-                
-                # 2. Fallback jika AI gagal (C, D, I)
-                if not c_kode: c_kode = df.columns[2] if len(df.columns) > 2 else None
-                if not c_nama: c_nama = df.columns[3] if len(df.columns) > 3 else None
-                if not c_qty:  c_qty  = df.columns[8] if len(df.columns) > 8 else df.columns[-1]
-
-                if c_kode and c_nama and c_qty:
-                    df_sub = df[[c_kode, c_nama, c_qty]].copy()
-                    # Pastikan Qty adalah angka
-                    df_sub[c_qty] = pd.to_numeric(df_sub[c_qty], errors='coerce').fillna(0)
+                try:
+                    # Sesuai instruksi: Kolom C (Index 2) = Nama & Type, Kolom I (Index 8) = QTY
+                    # Kita ambil kolom 0 (Kode) juga agar bisa merge dengan benar
+                    df_sub = df.iloc[:, [0, 2, 8]].copy()
+                    df_sub.columns = ['KODE', 'NAMA_TYPE', 'QTY']
                     
-                    df_sub = df_sub.rename(columns={
-                        c_kode: "KODE MATERIAL",
-                        c_nama: "NAMA MATERIAL",
-                        c_qty: f"STOK_{site.upper()}"
-                    })
+                    # Konversi QTY ke angka agar tidak error saat diproses
+                    df_sub['QTY'] = pd.to_numeric(df_sub['QTY'], errors='coerce').fillna(0)
                     
-                    # Bersihkan spasi dan hapus baris kosong
-                    df_sub = df_sub.dropna(subset=["KODE MATERIAL"])
-                    df_sub["KODE MATERIAL"] = df_sub["KODE MATERIAL"].astype(str).str.strip()
+                    # Identifikasi Type (Preventive / Corrective) berdasarkan isi teks di kolom C
+                    df_sub['TYPE'] = df_sub['NAMA_TYPE'].apply(lambda x: 'PREVENTIVE' if 'PREVENTIVE' in str(x).upper() else 'CORRECTIVE')
+                    
+                    # Tambahkan identitas PLTD
+                    df_sub['PLTD'] = site.upper()
+                    full_data.append(df_sub)
+                except Exception as e:
+                    st.error(f"Format kolom di {site} tidak sesuai.")
 
-                    if main_df is None:
-                        main_df = df_sub
-                    else:
-                        main_df = pd.merge(main_df, df_sub, on=["KODE MATERIAL", "NAMA MATERIAL"], how='outer')
-        
-        if main_df is not None:
-            st.dataframe(main_df.sort_values("NAMA MATERIAL").fillna(0), use_container_width=True, hide_index=True)
-            st.caption(f"Menampilkan total {len(main_df)} item unik dari {len(sel_pltd)} lokasi.")
+        if full_data:
+            df_combined = pd.concat(full_data, ignore_index=True)
+            
+            # Pivot data agar PLTD jadi header ke samping
+            df_pivot = df_combined.pivot_table(
+                index=['KODE', 'NAMA_TYPE', 'TYPE'], 
+                columns='PLTD', 
+                values='QTY', 
+                aggfunc='sum'
+            ).reset_index().fillna(0)
 
-# --- PAGE 3: ANALISA ---
+            # --- TAMPILAN SPLIT ---
+            st.subheader("🛠️ Kelompok: PREVENTIVE MAINTENANCE")
+            df_prev = df_pivot[df_pivot['TYPE'] == 'PREVENTIVE']
+            st.dataframe(df_prev.drop(columns=['TYPE']), use_container_width=True, hide_index=True)
+            
+            st.divider()
+            
+            st.subheader("🆘 Kelompok: CORRECTIVE MAINTENANCE")
+            df_corr = df_pivot[df_pivot['TYPE'] == 'CORRECTIVE']
+            st.dataframe(df_corr.drop(columns=['TYPE']), use_container_width=True, hide_index=True)
+        else:
+            st.warning("Tidak ada data yang dapat ditampilkan.")
+
 elif page == "Page 3: Analisa & Propose":
     st.title("📈 Analisa & Propose")
-    if not sel_pltd:
-        st.info("👋 Pilih PLTD di sidebar.")
-    else:
-        df_stok = load_gsheet_data(PLTD_IDS.get(sel_pltd[0]))
-        df_harga = load_gsheet_data(ID_GABUNGAN_D365, "DARI TARIKAN")
-        if not df_stok.empty and not df_harga.empty:
-            c_s = ai_smart_column_search(df_stok, ['KODE', 'PART NUMBER'])
-            c_h = ai_smart_column_search(df_harga, ['KODE', 'PART NUMBER'])
-            if c_s and c_h:
-                df_merged = pd.merge(df_stok, df_harga, left_on=c_s, right_on=c_h, how='left')
-                st.success(f"🤖 AI Match Berhasil: {c_s}")
-                st.dataframe(df_merged, use_container_width=True)
-            else: st.error("Kolom Kode tidak ditemukan.")
+    st.info("Fitur Analisa Data.")
 
-# --- PAGE 4: MONITORING ---
 elif page == "Page 4: Monitoring Transaksi":
-    st.title("📊 Monitoring Transaksi PR/MR")
-    if not (sel_proj or sel_year or sel_stat or sel_site):
-        st.info("👋 Pilih filter di sidebar.")
-        st.stop()
-    
-    df_f = df_raw.copy()
-    if sel_proj: df_f = df_f[df_f['PROJECT'].isin(sel_proj)]
-    if sel_year: df_f = df_f[df_f['Tahun'].isin(sel_year)]
-    if sel_stat: df_f = df_f[df_f['STATUS'].isin(sel_stat)]
-    if sel_site: df_f = df_f[df_f['WH TUJUAN'].isin(sel_site)]
-
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Total Order", len(df_f))
-    m2.metric("Total Qty", f"{int(df_f['QTY'].sum()):,}")
-    m3.metric("Total Biaya", f"Rp {df_f['TOTAL COST'].sum():,.0f}")
-    m4.metric("Site Aktif", df_f['WH TUJUAN'].nunique())
-
-    st.subheader("📈 Tren Permintaan")
-    trend = df_f.groupby('Tgl_Str').size().reset_index(name='Requests')
-    st.plotly_chart(px.line(trend, x='Tgl_Str', y='Requests', markers=True, text='Requests', color_discrete_sequence=[TEMA_BIRU]), use_container_width=True)
-
-    c1, c2 = st.columns(2)
-    with c1:
-        st.subheader("🏢 Top Site Request")
-        ts = df_f.groupby('WH TUJUAN')['QTY'].sum().sort_values(ascending=False).head(10).reset_index()
-        st.plotly_chart(px.bar(ts, x='WH TUJUAN', y='QTY', text_auto='.2s', color_discrete_sequence=[TEMA_BIRU]), use_container_width=True)
-    with c2:
-        st.subheader("🔝 Top Requested Items")
-        ti = df_f.groupby('ITEM NAME')['QTY'].sum().sort_values(ascending=False).head(10).reset_index()
-        st.plotly_chart(px.bar(ti, x='ITEM NAME', y='QTY', text_auto='.2s', color_discrete_sequence=['#4B8BBE']), use_container_width=True)
-
-    st.subheader("📋 Detail Movement Record")
-    st.dataframe(df_f[['TANGGAL', 'WH TUJUAN', 'ITEM NAME', 'QTY', 'TOTAL COST', 'STATUS']], use_container_width=True, hide_index=True)
+    st.title("📊 Monitoring Transaksi")
+    if not df_raw.empty:
+        st.dataframe(df_raw, use_container_width=True)
