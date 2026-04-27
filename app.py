@@ -76,7 +76,6 @@ def load_gsheet_data(sheet_id):
     url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv"
     try:
         df = pd.read_csv(url)
-        # Hilangkan spasi di nama kolom
         df.columns = [str(c).strip() for c in df.columns]
         return df
     except:
@@ -98,10 +97,10 @@ with st.sidebar:
 
 if page == "Page 1: Menu Utama":
     st.title("🚛 Dashboard Project Bach")
-    st.info("Selamat Datang. Gunakan navigasi di samping untuk memantau stok.")
+    st.info("Pilih menu di sidebar untuk memantau stok dan transaksi.")
 
 elif page == "Page 2: Stock Aktual":
-    st.title("📦 Perbandingan Stock Aktual")
+    st.title("📦 Perbandingan Stock Aktual (Split Preventive & Corrective)")
     if not sel_pltd:
         st.info("👋 Silakan pilih PLTD di sidebar.")
     else:
@@ -110,57 +109,63 @@ elif page == "Page 2: Stock Aktual":
             df = load_gsheet_data(PLTD_IDS.get(site))
             if not df.empty:
                 try:
-                    # Ambil Kolom A (0), C (2), I (8)
+                    # Ambil Kolom C (Index 2) untuk Nama/Type dan Kolom I (Index 8) untuk QTY
+                    # Tetap ambil Kolom A (Index 0) untuk Kode Material sebagai kunci
                     df_sub = df.iloc[:, [0, 2, 8]].copy()
-                    df_sub.columns = ['KODE', 'NAMA_TYPE', 'QTY']
+                    df_sub.columns = ['KODE MATERIAL', 'NAMA MATERIAL', 'QTY']
                     
-                    # Bersihkan data
-                    df_sub['KODE'] = df_sub['KODE'].astype(str).str.strip()
+                    # Konversi QTY ke angka secara aman (Series conversion)
                     df_sub['QTY'] = pd.to_numeric(df_sub['QTY'], errors='coerce').fillna(0)
                     
-                    # LOGIKA HAFALAN PREVENTIVE
-                    def classify(row):
-                        kode_up = str(row['KODE']).upper()
-                        # Cek apakah ada bagian dari kode hafalan di dalam kolom KODE
-                        if any(prev_item.upper() in kode_up for prev_item in LIST_KODE_PREVENTIVE):
+                    # Logika Klasifikasi Berdasarkan Hafalan KODE
+                    def classify(val):
+                        val_up = str(val).upper()
+                        if any(item.upper() in val_up for item in LIST_KODE_PREVENTIVE):
                             return 'PREVENTIVE'
                         return 'CORRECTIVE'
                     
-                    df_sub['KATEGORI'] = df_sub.apply(classify, axis=1)
+                    df_sub['KATEGORI'] = df_sub['KODE MATERIAL'].apply(classify)
                     df_sub['PLTD'] = site.upper()
                     all_dfs.append(df_sub)
                 except:
-                    st.error(f"Format kolom di {site} tidak sesuai.")
+                    st.error(f"Format kolom di {site} tidak sesuai (Pastikan Kolom C & I tersedia).")
 
         if all_dfs:
             df_final = pd.concat(all_dfs, ignore_index=True)
             
-            # Pivot untuk header PLTD ke samping
+            # Pivot data: PLTD jadi header ke samping
             df_pivot = df_final.pivot_table(
-                index=['KODE', 'NAMA_TYPE', 'KATEGORI'],
+                index=['KODE MATERIAL', 'NAMA MATERIAL', 'KATEGORI'],
                 columns='PLTD',
                 values='QTY',
                 aggfunc='sum'
             ).reset_index().fillna(0)
 
-            # Tampilan Split
-            st.subheader("🛠️ PREVENTIVE MAINTENANCE")
-            df_p = df_pivot[df_pivot['KATEGORI'] == 'PREVENTIVE'].drop(columns=['KATEGORI'])
-            st.dataframe(df_p, use_container_width=True, hide_index=True)
+            # --- TAMPILAN PREVENTIVE ---
+            st.subheader("🛠️ KELOMPOK: PREVENTIVE MAINTENANCE")
+            df_prev = df_pivot[df_pivot['KATEGORI'] == 'PREVENTIVE'].drop(columns=['KATEGORI'])
+            if not df_prev.empty:
+                st.dataframe(df_prev, use_container_width=True, hide_index=True)
+            else:
+                st.write("Tidak ada item Preventive terdeteksi.")
 
             st.markdown("---")
 
-            st.subheader("🆘 CORRECTIVE MAINTENANCE")
-            df_c = df_pivot[df_pivot['KATEGORI'] == 'CORRECTIVE'].drop(columns=['KATEGORI'])
-            st.dataframe(df_c, use_container_width=True, hide_index=True)
+            # --- TAMPILAN CORRECTIVE ---
+            st.subheader("🆘 KELOMPOK: CORRECTIVE MAINTENANCE")
+            df_corr = df_pivot[df_pivot['KATEGORI'] == 'CORRECTIVE'].drop(columns=['KATEGORI'])
+            if not df_corr.empty:
+                st.dataframe(df_corr, use_container_width=True, hide_index=True)
+            else:
+                st.write("Tidak ada item Corrective terdeteksi.")
         else:
-            st.warning("Data tidak ditemukan.")
+            st.warning("Data tidak ditemukan dari pilihan PLTD tersebut.")
 
 elif page == "Page 3: Analisa & Propose":
     st.title("📈 Analisa & Propose")
-    st.write("Fitur perbandingan stok dan kebutuhan.")
+    st.info("Fitur untuk membandingkan stok aktual dengan database harga D365.")
 
 elif page == "Page 4: Monitoring Transaksi":
     st.title("📊 Monitoring Transaksi")
     if not df_raw.empty:
-        st.dataframe(df_raw, use_container_width=True)
+        st.dataframe(df_raw, use_container_width=True, hide_index=True)
