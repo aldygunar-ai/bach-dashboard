@@ -74,7 +74,8 @@ def load_gsheet_data(sheet_id, sheet_name=None):
     except: return pd.DataFrame()
 
 def ai_smart_column_search(df, target_keywords):
-    cleaned_cols = {col: col.strip().replace('\n', ' ').upper() for col in df.columns}
+    """Mencari nama kolom asli berdasarkan kecocokan keyword (Case-Insensitive)."""
+    cleaned_cols = {col: str(col).strip().replace('\n', ' ').upper() for col in df.columns}
     for original, cleaned in cleaned_cols.items():
         if any(kw.upper() in cleaned for kw in target_keywords):
             return original
@@ -98,38 +99,50 @@ with st.sidebar:
 # --- PAGE 1: MENU UTAMA ---
 if page == "Page 1: Menu Utama":
     st.title("🚛 Dashboard Project Bach")
-    st.info("Pilih menu di sidebar untuk memantau stok dan transaksi.")
+    st.info("Sistem Pemantauan Stok dan Transaksi.")
 
-# --- PAGE 2: STOCK AKTUAL (AUTO HEADER EXCEL STYLE) ---
+# --- PAGE 2: STOCK AKTUAL (AI AUTO-MAPPING) ---
 elif page == "Page 2: Stock Aktual":
-    st.title("📦 Perbandingan Stock Aktual")
+    st.title("📦 Perbandingan Stock Aktual (AI Table)")
     if not sel_pltd:
-        st.info("👋 Silakan pilih beberapa PLTD di sidebar untuk membandingkan data.")
+        st.info("👋 Silakan pilih PLTD di sidebar.")
     else:
         main_df = None
+        
         for site in sel_pltd:
             df = load_gsheet_data(PLTD_IDS.get(site))
             if not df.empty:
-                try:
-                    # Ambil C (index 2), D (index 3), I (index 8)
-                    df_sub = df.iloc[:, [2, 3, 8]].copy()
-                    col_kode = df_sub.columns[0]
-                    col_nama = df_sub.columns[1]
-                    col_qty = df_sub.columns[2]
+                # 🤖 AI Mencari Kolom yang Sesuai
+                c_kode = ai_smart_column_search(df, ['KODE', 'PART NUMBER'])
+                c_nama = ai_smart_column_search(df, ['NAMA MATERIAL', 'DESCRIPTION', 'NAMA BARANG'])
+                c_qty  = ai_smart_column_search(df, ['QTY', 'STOCK', 'SISA', 'AKTUAL'])
+                
+                if c_kode and c_nama and c_qty:
+                    # Ambil hanya 3 kolom yang ditemukan
+                    df_sub = df[[c_kode, c_nama, c_qty]].copy()
                     
-                    # Rename QTY dengan Nama PLTD sebagai Header
-                    df_sub = df_sub.rename(columns={col_qty: f"QTY_{site.upper()}"})
+                    # Standarisasi Nama Kolom Kunci agar bisa di-Merge
+                    df_sub = df_sub.rename(columns={
+                        c_kode: "KODE MATERIAL",
+                        c_nama: "NAMA MATERIAL",
+                        c_qty: f"STOK_{site.upper()}"
+                    })
+                    
+                    # Membersihkan data dari baris kosong
+                    df_sub = df_sub.dropna(subset=["KODE MATERIAL"])
                     
                     if main_df is None:
                         main_df = df_sub
                     else:
-                        # Gabungkan berdasarkan Kode & Nama Material agar sejajar ke samping
-                        main_df = pd.merge(main_df, df_sub, on=[col_kode, col_nama], how='outer')
-                except:
-                    st.error(f"Gagal memproses kolom di {site}")
+                        # Join otomatis ke samping berdasarkan Kode & Nama
+                        main_df = pd.merge(main_df, df_sub, on=["KODE MATERIAL", "NAMA MATERIAL"], how='outer')
+                else:
+                    st.warning(f"⚠️ AI tidak menemukan kolom lengkap di {site}. Pastikan ada kolom Kode, Nama, dan Qty.")
+            else:
+                st.error(f"❌ Gagal memuat data dari {site}.")
         
         if main_df is not None:
-            st.write(f"Menampilkan data untuk: {', '.join(sel_pltd)}")
+            # Mengisi data kosong dengan 0 agar tabel rapi
             st.dataframe(main_df.fillna(0), use_container_width=True, hide_index=True)
 
 # --- PAGE 3: ANALISA ---
@@ -141,19 +154,19 @@ elif page == "Page 3: Analisa & Propose":
         df_stok = load_gsheet_data(PLTD_IDS.get(sel_pltd[0]))
         df_harga = load_gsheet_data(ID_GABUNGAN_D365, "DARI TARIKAN")
         if not df_stok.empty and not df_harga.empty:
-            c_stok = ai_smart_column_search(df_stok, ['KODE', 'PART NUMBER', 'KODE MATERIAL'])
-            c_harga = ai_smart_column_search(df_harga, ['KODE', 'PART NUMBER', 'KODE MATERIAL'])
-            if c_stok and c_harga:
-                df_merged = pd.merge(df_stok, df_harga, left_on=c_stok, right_on=c_harga, how='left')
-                st.success(f"🤖 AI Match: {c_stok} ↔ {c_harga}")
+            c_s = ai_smart_column_search(df_stok, ['KODE', 'PART NUMBER'])
+            c_h = ai_smart_column_search(df_harga, ['KODE', 'PART NUMBER'])
+            if c_s and c_h:
+                df_merged = pd.merge(df_stok, df_harga, left_on=c_s, right_on=c_h, how='left')
+                st.success(f"🤖 Data Terhubung via {c_s}")
                 st.dataframe(df_merged, use_container_width=True)
-            else: st.error("🤖 Kolom Kode tidak ditemukan.")
+            else: st.error("Kolom Kode tidak ditemukan.")
 
-# --- PAGE 4: MONITORING (RESTORASI LENGKAP) ---
+# --- PAGE 4: MONITORING ---
 elif page == "Page 4: Monitoring Transaksi":
     st.title("📊 Monitoring Transaksi PR/MR")
     if not (sel_proj or sel_year or sel_stat or sel_site):
-        st.info("👋 Silakan pilih filter di sidebar.")
+        st.info("👋 Pilih filter di sidebar.")
         st.stop()
     
     df_f = df_raw.copy()
@@ -175,13 +188,12 @@ elif page == "Page 4: Monitoring Transaksi":
     c1, c2 = st.columns(2)
     with c1:
         st.subheader("🏢 Top Site Request")
-        top_s = df_f.groupby('WH TUJUAN')['QTY'].sum().sort_values(ascending=False).head(10).reset_index()
-        st.plotly_chart(px.bar(top_s, x='WH TUJUAN', y='QTY', text_auto='.2s', color_discrete_sequence=[TEMA_BIRU]), use_container_width=True)
+        ts = df_f.groupby('WH TUJUAN')['QTY'].sum().sort_values(ascending=False).head(10).reset_index()
+        st.plotly_chart(px.bar(ts, x='WH TUJUAN', y='QTY', text_auto='.2s', color_discrete_sequence=[TEMA_BIRU]), use_container_width=True)
     with c2:
         st.subheader("🔝 Top Requested Items")
-        top_i = df_f.groupby('ITEM NAME')['QTY'].sum().sort_values(ascending=False).head(10).reset_index()
-        st.plotly_chart(px.bar(top_i, x='ITEM NAME', y='QTY', text_auto='.2s', color_discrete_sequence=['#4B8BBE']), use_container_width=True)
+        ti = df_f.groupby('ITEM NAME')['QTY'].sum().sort_values(ascending=False).head(10).reset_index()
+        st.plotly_chart(px.bar(ti, x='ITEM NAME', y='QTY', text_auto='.2s', color_discrete_sequence=['#4B8BBE']), use_container_width=True)
 
     st.subheader("📋 Detail Movement Record")
     st.dataframe(df_f[['TANGGAL', 'WH TUJUAN', 'ITEM NAME', 'QTY', 'TOTAL COST', 'STATUS']], use_container_width=True, hide_index=True)
-    st.map(df_f[df_f['lat'] != 0][['lat', 'lon']], zoom=3)
