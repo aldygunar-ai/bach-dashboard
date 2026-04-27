@@ -8,8 +8,8 @@ import numpy as np
 # --- 1. KONFIGURASI HALAMAN & STYLE ---
 st.set_page_config(page_title="Dashboard Project Bach", layout="wide")
 
-# Tema warna PT BACH (Biru Gelap)
 TEMA_BIRU = "#0E2F56"
+TEMA_MUDA = "#4B8BBE"
 
 st.markdown(f"""
     <style>
@@ -44,7 +44,7 @@ ID_GABUNGAN_D365 = "1aZZnnBjSybgzEgUECdLSCaPJ_rMKNHJmfGEwetOARbs"
 URL_OPS = "https://bachmulti-my.sharepoint.com/:x:/g/personal/prabawa_bachgroup_co_id/IQDpLV2xOcHmS51kfDxWqHQAAUHHovDCqOPtICGu3HUp6nc?download=1"
 URL_DAS = "https://bachmulti-my.sharepoint.com/:x:/g/personal/prabawa_bachgroup_co_id/IQBxJHUjgIjQTooUQPRp14iZAUy5KIiRVxLFRW-z8X17lDY?download=1"
 
-# --- 3. DATA LOADERS ---
+# --- 3. HELPER FUNCTIONS ---
 @st.cache_data
 def load_transaction_data():
     headers = {'User-Agent': 'Mozilla/5.0'}
@@ -58,7 +58,6 @@ def load_transaction_data():
         df_das = pd.read_excel(io.BytesIO(res_das.content))
         df_das['PROJECT'] = 'PROJECT DAS'
     except: df_das = pd.DataFrame()
-    
     df = pd.concat([df_ops, df_das], ignore_index=True)
     if not df.empty and 'TANGGAL' in df.columns:
         df['TANGGAL'] = pd.to_datetime(df['TANGGAL'], errors='coerce')
@@ -83,133 +82,151 @@ def load_gsheet_data(sheet_id, sheet_name=None):
     try: return pd.read_csv(url)
     except: return pd.DataFrame()
 
-df_raw_transaksi = load_transaction_data()
+def find_column(df, keywords):
+    """Mencari nama kolom asli berdasarkan list keyword."""
+    for col in df.columns:
+        if any(key.upper() in col.upper() for key in keywords):
+            return col
+    return None
 
 # --- 4. SIDEBAR ---
 if 'reset_counter' not in st.session_state:
     st.session_state.reset_counter = 0
 
-def do_reset():
-    st.session_state.reset_counter += 1
-
 with st.sidebar:
     st.markdown('<div class="sidebar-title">PT BACH MULTI GLOBAL</div>', unsafe_allow_html=True)
-    page = st.radio("Menu Navigasi", ["Page 1: Menu Utama", "Page 2: Stock Aktual", "Page 3: Analisa & Propose", "Page 4: Monitoring Transaksi"])
+    page = st.radio("Navigasi", ["Page 1: Menu Utama", "Page 2: Stock Aktual", "Page 3: Analisa & Propose", "Page 4: Monitoring Transaksi"])
     
     st.divider()
     c = st.session_state.reset_counter
-    
     if page == "Page 4: Monitoring Transaksi":
+        df_raw_transaksi = load_transaction_data()
         sel_proj = st.multiselect("Project", df_raw_transaksi['PROJECT'].unique() if not df_raw_transaksi.empty else [], key=f'p_{c}')
         sel_year = st.multiselect("Tahun", sorted(df_raw_transaksi['Tahun'].unique(), reverse=True) if not df_raw_transaksi.empty else [], key=f'y_{c}')
-        sel_month = st.multiselect("Bulan", df_raw_transaksi['Bulan'].unique() if not df_raw_transaksi.empty else [], key=f'm_{c}')
         sel_stat = st.multiselect("Status", sorted(df_raw_transaksi['STATUS'].unique()) if not df_raw_transaksi.empty else [], key=f's_{c}')
-        sel_site = st.multiselect("Site (WH Tujuan)", sorted(df_raw_transaksi['WH TUJUAN'].dropna().unique()) if not df_raw_transaksi.empty else [], key=f'st_{c}')
     else:
         sel_pltd = st.multiselect("Pilih Nama PLTD", options=list(PLTD_IDS.keys()), key=f'pltd_{c}')
 
-    st.divider()
-    st.button("🔄 Clear All Filters", on_click=do_reset, use_container_width=True)
+    st.button("🔄 Clear All Filters", on_click=lambda: st.session_state.update({"reset_counter": st.session_state.reset_counter + 1}), use_container_width=True)
 
-# --- PAGE 1: MENU UTAMA ---
-if page == "Page 1: Menu Utama":
-    st.title("🚛 Dashboard Logistics Center")
-    st.info("Sistem Pemantauan Stok PLTD dan Transaksi Real-time.")
-    col1, col2 = st.columns(2)
-    with col1: st.success("### Stok PLTD\nCek ketersediaan di Page 2.")
-    with col2: st.warning("### Transaksi PR/MR\nCek pergerakan barang di Page 4.")
-
-# --- PAGE 2: STOCK AKTUAL (MULTI-SELECT PER PLTD) ---
-elif page == "Page 2: Stock Aktual":
-    st.title("📦 Ketersediaan Stock Material")
+# --- PAGE 2: STOCK AKTUAL (FIXED READ & COMPARISON) ---
+if page == "Page 2: Stock Aktual":
+    st.title("📦 Perbandingan Stock Aktual Antar Site")
     if not sel_pltd:
-        st.info("👋 Silakan pilih satu atau beberapa PLTD di sidebar untuk melihat data.")
+        st.info("👋 Pilih beberapa PLTD di sidebar untuk membandingkan stok.")
     else:
+        all_data = []
         for site in sel_pltd:
-            with st.expander(f"📍 DATA STOCK: {site.upper()}", expanded=True):
-                df = load_gsheet_data(PLTD_IDS.get(site))
-                if not df.empty:
-                    df.columns = [c.strip() for c in df.columns]
-                    # Filter kolom penting saja
-                    important_cols = [c for c in df.columns if any(x in c.upper() for x in ['KODE', 'NAMA MATERIAL', 'SISA STOCK', 'AKTUAL'])]
-                    st.dataframe(df[important_cols] if important_cols else df, use_container_width=True, hide_index=True)
-                else:
-                    st.error(f"Gagal menarik data untuk {site}")
+            df = load_gsheet_data(PLTD_IDS.get(site))
+            if not df.empty:
+                df.columns = [c.strip() for c in df.columns]
+                # Cari kolom kunci
+                c_kode = find_column(df, ['KODE', 'PART NUMBER'])
+                c_nama = find_column(df, ['NAMA', 'DESCRIPTION'])
+                c_qty = find_column(df, ['SISA', 'AKTUAL', 'STOCK', 'QTY'])
+                
+                # Filter hanya kolom yang ada
+                cols = [c for c in [c_kode, c_nama, c_qty] if c]
+                temp_df = df[cols].copy()
+                temp_df['LOKASI'] = site
+                # Rename untuk standarisasi tabel perbandingan
+                temp_df = temp_df.rename(columns={c_kode: 'Kode', c_nama: 'Nama Material', c_qty: 'Stock Aktual'})
+                all_data.append(temp_df)
+        
+        if all_data:
+            df_compare = pd.concat(all_data, ignore_index=True)
+            
+            # Tampilan Ringkasan Tabel (Mudah Dibaca)
+            st.subheader("📋 Ringkasan Per Lokasi")
+            for site in sel_pltd:
+                site_data = df_compare[df_compare['LOKASI'] == site].drop(columns=['LOKASI'])
+                with st.expander(f"📍 {site.upper()} (Total: {len(site_data)} Item)", expanded=True):
+                    st.dataframe(site_data, use_container_width=True, hide_index=True)
+            
+            # Tabel Perbandingan Side-by-Side (Pivot)
+            st.subheader("⚖️ Perbandingan Side-by-Side")
+            pivot_df = df_compare.pivot_table(index=['Kode', 'Nama Material'], columns='LOKASI', values='Stock Aktual', aggfunc='sum').reset_index()
+            st.dataframe(pivot_df, use_container_width=True)
+        else: st.error("Data tidak ditemukan.")
 
-# --- PAGE 3: ANALISA & PROPOSE (AUTO-CHECK COLUMNS) ---
+# --- PAGE 3: ANALISA (AUTO-CHECK IMPROVED) ---
 elif page == "Page 3: Analisa & Propose":
-    st.title("📈 Analisa & Propose Pengiriman")
+    st.title("📈 Analisa & Propose")
     if not sel_pltd:
         st.info("👋 Pilih PLTD di sidebar.")
     else:
-        # Gunakan PLTD pertama yang dipilih untuk analisa
-        site_target = sel_pltd[0]
-        df_stok = load_gsheet_data(PLTD_IDS.get(site_target))
+        site = sel_pltd[0]
+        df_stok = load_gsheet_data(PLTD_IDS.get(site))
         df_harga = load_gsheet_data(ID_GABUNGAN_D365, "DARI TARIKAN")
         
         if not df_stok.empty and not df_harga.empty:
-            df_stok.columns = [c.strip() for c in df_stok.columns]
-            df_harga.columns = [c.strip() for c in df_harga.columns]
-            
-            # LOGIKA AUTO-CHECK KOLOM KODE
-            c_left = next((c for c in df_stok.columns if 'KODE' in c.upper()), None)
-            c_right = next((c for c in df_harga.columns if 'KODE' in c.upper()), None)
+            c_left = find_column(df_stok, ['KODE', 'PART NUMBER'])
+            c_right = find_column(df_harga, ['KODE', 'PART NUMBER'])
             
             if c_left and c_right:
                 df_merged = pd.merge(df_stok, df_harga, left_on=c_left, right_on=c_right, how='left')
-                st.subheader(f"Hasil Analisa Integrasi: {site_target}")
+                st.success(f"✅ Sinkronisasi Berhasil Menggunakan Kolom: '{c_left}'")
                 st.dataframe(df_merged, use_container_width=True)
             else:
-                st.warning("⚠️ Kolom 'Kode Material' tidak ditemukan secara otomatis. Pastikan nama kolom di spreadsheet mengandung kata 'KODE'.")
-        else: st.error("Data tidak lengkap.")
+                st.error("❌ Kolom Kode Material tidak ditemukan. Harap pastikan kolom di spreadsheet mengandung kata 'KODE'.")
+        else: st.warning("Data belum siap.")
 
-# --- PAGE 4: MONITORING TRANSAKSI (TEMA WARNA & ANGKA) ---
+# --- PAGE 4: MONITORING TRANSAKSI (DEGRADASI WARNA & RAPI) ---
 elif page == "Page 4: Monitoring Transaksi":
-    st.title("📊 Monitoring Transaksi PR/MR")
-    if not (sel_proj or sel_year or sel_month or sel_stat or sel_site):
-        st.info("👋 Silakan pilih filter di sidebar.")
+    df_raw = load_transaction_data()
+    st.title("📊 Monitoring Transaksi")
+    
+    if not (sel_proj or sel_year or sel_stat):
+        st.info("👋 Pilih filter untuk menampilkan dashboard.")
         st.stop()
 
-    df_f = df_raw_transaksi.copy()
+    df_f = df_raw.copy()
     if sel_proj: df_f = df_f[df_f['PROJECT'].isin(sel_proj)]
     if sel_year: df_f = df_f[df_f['Tahun'].isin(sel_year)]
-    if sel_month: df_f = df_f[df_f['Bulan'].isin(sel_month)]
     if sel_stat: df_f = df_f[df_f['STATUS'].isin(sel_stat)]
-    if sel_site: df_f = df_f[df_f['WH TUJUAN'].isin(sel_site)]
 
     # KPI
     m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Total Order", f"{len(df_f)}")
+    m1.metric("Total Order", len(df_f))
     m2.metric("Total Qty", f"{int(df_f['QTY'].sum()):,}")
     m3.metric("Total Biaya", f"Rp {df_f['TOTAL COST'].sum():,.0f}")
     m4.metric("Site Aktif", df_f['WH TUJUAN'].nunique())
 
     st.markdown("---")
-    # Grafik Tren dengan Angka & Warna Tema
+    
+    # 1. Grafik Tren (Degradasi di Line & Area)
     st.subheader("📈 Tren Permintaan Harian")
     trend = df_f.groupby('Tgl_Str').size().reset_index(name='Requests')
-    fig_tr = px.line(trend, x='Tgl_Str', y='Requests', markers=True, text='Requests', color_discrete_sequence=[TEMA_BIRU])
-    fig_tr.update_traces(textposition="top center")
+    fig_tr = px.area(trend, x='Tgl_Str', y='Requests', text='Requests', color_discrete_sequence=[TEMA_BIRU])
+    fig_tr.update_traces(mode="markers+lines+text", textposition="top center")
     st.plotly_chart(fig_tr, use_container_width=True)
 
+    # 2. Top Site & Material (Warna Degradasi / Continuous Scale)
     c1, c2 = st.columns(2)
     with c1:
-        st.subheader("🏢 Top Site Request")
-        top_site = df_f.groupby('WH TUJUAN')['QTY'].sum().sort_values(ascending=False).head(8).reset_index()
-        fig_site = px.bar(top_site, x='WH TUJUAN', y='QTY', text_auto='.2s', color_discrete_sequence=[TEMA_BIRU])
+        st.subheader("🏢 Top Site Request (QTY)")
+        top_site = df_f.groupby('WH TUJUAN')['QTY'].sum().sort_values(ascending=True).reset_index()
+        # Menggunakan color_continuous_scale untuk degradasi warna
+        fig_site = px.bar(top_site, y='WH TUJUAN', x='QTY', orientation='h', text_auto='.2s', 
+                          color='QTY', color_continuous_scale='Blues')
+        fig_site.update_layout(showlegend=False, coloraxis_showscale=False)
         st.plotly_chart(fig_site, use_container_width=True)
+
     with c2:
-        st.subheader("🔝 Top Items")
-        top_item = df_f.groupby('ITEM NAME')['QTY'].sum().sort_values(ascending=False).head(8).reset_index()
-        fig_item = px.bar(top_item, x='ITEM NAME', y='QTY', text_auto='.2s', color_discrete_sequence=['#4B8BBE'])
-        st.plotly_chart(fig_item, use_container_width=True)
+        st.subheader("🔝 Top Requested Material")
+        top_mat = df_f.groupby('ITEM NAME')['QTY'].sum().sort_values(ascending=True).tail(10).reset_index()
+        fig_mat = px.bar(top_mat, y='ITEM NAME', x='QTY', orientation='h', text_auto='.2s',
+                         color='QTY', color_continuous_scale='GnBu')
+        fig_mat.update_layout(showlegend=False, coloraxis_showscale=False, yaxis={'categoryorder':'total ascending'})
+        st.plotly_chart(fig_mat, use_container_width=True)
 
     st.markdown("---")
-    st.subheader("⚠️ Highlight Outstanding")
-    df_out = df_f[~df_f['STATUS'].isin(['DELIVERED', 'CANCEL'])]
-    st.dataframe(df_out[['TANGGAL', 'WH TUJUAN', 'ITEM NAME', 'QTY', 'STATUS']], use_container_width=True, hide_index=True)
-
-    st.subheader("📋 Movement Record")
-    st.dataframe(df_f[['TANGGAL', 'WH TUJUAN', 'ITEM NAME', 'QTY', 'TOTAL COST', 'STATUS']], use_container_width=True, hide_index=True)
-
+    st.subheader("📋 Detail Movement Record")
+    st.dataframe(df_f[['TANGGAL', 'WH TUJUAN', 'ITEM NAME', 'QTY', 'STATUS', 'TOTAL COST']], use_container_width=True, hide_index=True)
     st.map(df_f[df_f['lat'] != 0][['lat', 'lon']], zoom=3)
+
+# --- PAGE 1: MENU UTAMA ---
+elif page == "Page 1: Menu Utama":
+    st.title("🚛 Dashboard Logistics Bach")
+    st.markdown("### Navigasi Dashboard")
+    st.info("Pilih menu di sidebar untuk melihat data stok aktual atau transaksi.")
