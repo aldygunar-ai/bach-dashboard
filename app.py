@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 import gspread
 from gspread_dataframe import get_as_dataframe
 from gspread.exceptions import WorksheetNotFound
-import sys
+import re
 
 # ======================== PAGE CONFIG ========================
 st.set_page_config(
@@ -19,19 +19,68 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# ======================== CSS Styling ========================
+# ======================== CUSTOM CSS ========================
 st.markdown("""
 <style>
-    .main { background-color: #F8F9FA; }
-    [data-testid="stSidebar"] { background-color: #0E2F56 !important; }
-    .sidebar-title {
-        color: white; font-size: 20px; font-weight: 800; text-align: center;
-        margin-bottom: 25px; padding: 10px; border-bottom: 1px solid #ffffff33;
+    /* Overall background */
+    .main {
+        background-color: #F5F7FA;
     }
-    [data-testid="stSidebar"] label p { color: white !important; font-weight: 500 !important; }
-    [data-testid="stSidebar"] button svg, button[kind="headerNoSpacing"] svg { fill: white !important; }
-    div[data-testid="stMetricValue"] { font-size: 28px; font-weight: 800; color: #0E2F56; }
-    .stPlotlyChart { background-color: white; border-radius: 12px; padding: 15px; box-shadow: 0px 4px 12px rgba(0,0,0,0.05); }
+    /* Sidebar */
+    [data-testid="stSidebar"] {
+        background-color: #0A2540 !important;
+    }
+    .sidebar-title {
+        color: #FFFFFF;
+        font-size: 20px;
+        font-weight: 700;
+        text-align: center;
+        margin-bottom: 20px;
+        padding: 12px;
+        border-bottom: 1px solid rgba(255,255,255,0.2);
+    }
+    [data-testid="stSidebar"] label p {
+        color: #CCCCCC !important;
+        font-weight: 500 !important;
+    }
+    [data-testid="stSidebar"] button svg,
+    button[kind="headerNoSpacing"] svg {
+        fill: #FFFFFF !important;
+    }
+    /* Metric cards */
+    div[data-testid="stMetricValue"] {
+        font-size: 28px;
+        font-weight: 800;
+        color: #0A2540;
+    }
+    div[data-testid="stMetricLabel"] {
+        font-weight: 600;
+        color: #333333;
+    }
+    /* Plotly charts */
+    .stPlotlyChart {
+        background-color: #FFFFFF;
+        border-radius: 10px;
+        padding: 12px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+    /* Dataframe */
+    [data-testid="stDataFrame"] {
+        background-color: #FFFFFF;
+        border-radius: 10px;
+        padding: 8px;
+    }
+    /* Buttons */
+    .stButton>button {
+        background-color: #1F4E79;
+        color: white;
+        border-radius: 8px;
+        font-weight: 600;
+    }
+    .stButton>button:hover {
+        background-color: #2A6DA1;
+        color: white;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -93,10 +142,26 @@ PM_INTERVAL = {
 }
 DEFAULT_PM_INTERVAL = 500
 
-# ======================== HELPER: GSPREAD CLIENT ========================
+# ======================== HELPER: FIX PRIVATE KEY ========================
+def safe_credentials():
+    """Parse and fix common formatting issues in Streamlit secrets for GCP."""
+    creds = dict(st.secrets["gcp_service_account"])
+    # private_key might come with literal \n strings instead of newline characters
+    if 'private_key' in creds:
+        pk = creds['private_key']
+        # Replace literal "\n" with actual newline
+        pk = pk.replace('\\n', '\n')
+        # Ensure proper header/footer if missing
+        if not pk.startswith('-----BEGIN PRIVATE KEY-----'):
+            pk = '-----BEGIN PRIVATE KEY-----\n' + pk
+        if not pk.endswith('-----END PRIVATE KEY-----\n'):
+            pk = pk + '\n-----END PRIVATE KEY-----\n'
+        creds['private_key'] = pk
+    return creds
+
 @st.cache_resource
 def get_gspread_client():
-    credentials = st.secrets["gcp_service_account"]
+    credentials = safe_credentials()
     return gspread.service_account_from_dict(credentials)
 
 # ======================== DATA LOADER FUNCTIONS ========================
@@ -131,7 +196,7 @@ def load_stock_per_pltd():
                         'Qty': qty
                     })
         except Exception as e:
-            st.warning(f"Gagal baca {pltd}: {e}")
+            pass  # quietly ignore if sheet not accessible
     df = pd.DataFrame(all_data)
     if not df.empty:
         df['Jenis'] = df['Kode Material'].apply(lambda x: 'Preventive' if x in PREVENTIVE_CODES else 'Corrective')
@@ -166,8 +231,7 @@ def load_delivery_data():
         resp = requests.get(SHAREPOINT_DELIVERY_URL, headers=headers, timeout=20)
         df = pd.read_excel(io.BytesIO(resp.content))
         return df
-    except Exception as e:
-        st.error(f"Gagal memuat data pengiriman: {e}")
+    except:
         return pd.DataFrame()
 
 @st.cache_data(ttl=600)
@@ -191,6 +255,11 @@ def load_project_data():
         df['Tahun'] = df['TANGGAL'].dt.year.astype(str)
         df['Bulan'] = df['TANGGAL'].dt.strftime('%B')
         df['Tgl_Str'] = df['TANGGAL'].dt.strftime('%Y-%m-%d')
+    # Ensure numeric columns
+    if 'QTY' in df.columns:
+        df['QTY'] = pd.to_numeric(df['QTY'], errors='coerce').fillna(0)
+    if 'TOTAL COST' in df.columns:
+        df['TOTAL COST'] = pd.to_numeric(df['TOTAL COST'], errors='coerce').fillna(0)
     return df
 
 def get_duration(pltd):
@@ -205,8 +274,6 @@ def home():
     st.markdown("Ringkasan Cepat & Navigasi")
 
     df_stock = load_stock_per_pltd()
-    master = load_master_sheets()
-    df_deliv = load_delivery_data()
 
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -215,11 +282,9 @@ def home():
         total_qty = df_stock['Qty'].sum() if not df_stock.empty else 0
         st.metric("Total Stok (unit)", f"{total_qty:,.0f}")
     with col3:
-        # Placeholder for critical count
         st.metric("Material Kritis", "Lihat Analisis Stok")
 
     st.markdown("---")
-    st.subheader("Navigasi Cepat")
     cols = st.columns(4)
     with cols[0]:
         if st.button("📦 Stok PLTD", use_container_width=True):
@@ -241,7 +306,8 @@ def home():
         coords['lon'] = coords['PLTD'].apply(lambda x: PLTD_COORDS.get(x, (None, None))[1])
         valid = coords.dropna(subset=['lat'])
         if not valid.empty:
-            st.map(valid, latitude='lat', longitude='lon', zoom=4)
+            st.subheader("📍 Lokasi PLTD")
+            st.map(valid, latitude='lat', longitude='lon', zoom=4, height=350)
 
 # ======================== PAGE 2: STOK PLTD ========================
 def stock_pltd():
@@ -252,16 +318,14 @@ def stock_pltd():
     df_cikande = master['stok_cikande']
     df_deliv = load_delivery_data()
 
-    # Sidebar filter
     st.sidebar.header("Filter Stok PLTD")
     pltd_list = sorted(df_stock['PLTD'].unique()) if not df_stock.empty else []
-    selected_pltd = st.sidebar.multiselect("PLTD", pltd_list, default=pltd_list)
+    selected_pltd = st.sidebar.multiselect("PLTD", pltd_list, default=pltd_list[:5] if len(pltd_list)>5 else pltd_list)
     kode_list = sorted(df_stock['Kode Material'].unique())
-    selected_kode = st.sidebar.multiselect("Kode Material", kode_list, default=kode_list)
+    selected_kode = st.sidebar.multiselect("Kode Material", kode_list)
     jenis_list = ['Preventive', 'Corrective']
     selected_jenis = st.sidebar.multiselect("Jenis Material", jenis_list, default=jenis_list)
 
-    # Filter
     df = df_stock.copy()
     if selected_pltd: df = df[df['PLTD'].isin(selected_pltd)]
     if selected_kode: df = df[df['Kode Material'].isin(selected_kode)]
@@ -271,10 +335,8 @@ def stock_pltd():
     st.dataframe(df[['PLTD', 'Kode Material', 'Nama Material', 'Type Material', 'Qty', 'Jenis']],
                  use_container_width=True, hide_index=True)
 
-    # In-Transit categorization
-    st.subheader("🚚 Status Pengiriman (In-Transit)")
+    st.subheader("🚚 Status Pengiriman (In‑Transit)")
     if not df_deliv.empty:
-        # Try to classify based on existing STATUS column
         if 'STATUS' in df_deliv.columns:
             status_map = {
                 'IN TRANSIT': 'Proses Kirim',
@@ -287,7 +349,6 @@ def stock_pltd():
             df_deliv['Kategori Pengiriman'] = df_deliv['STATUS'].map(status_map).fillna('Lainnya')
         else:
             df_deliv['Kategori Pengiriman'] = 'Proses Kirim'
-            st.info("Kolom 'STATUS' tidak ditemukan, semua dianggap Proses Kirim.")
         kat_list = df_deliv['Kategori Pengiriman'].unique()
         selected_kat = st.multiselect("Kategori Pengiriman", kat_list, default=kat_list)
         df_deliv_f = df_deliv[df_deliv['Kategori Pengiriman'].isin(selected_kat)]
@@ -310,22 +371,18 @@ def analisis_stok():
     df_harga = master['harga']
     df_pemakaian = master['pemakaian']
 
-    # Asumsi jam operasi
     stro = st.sidebar.number_input("Jam Operasi/hari", min_value=1, max_value=24, value=24)
     hari_per_bulan = 30.5
     jam_per_bulan = hari_per_bulan * stro
 
-    # Gabung harga
     if not df_harga.empty and 'Kode Material' in df_harga.columns and 'Harga Satuan' in df_harga.columns:
         df_stock = df_stock.merge(df_harga[['Kode Material', 'Harga Satuan']], on='Kode Material', how='left')
     else:
         df_stock['Harga Satuan'] = np.nan
 
-    # Kebutuhan PM
     df_stock['Interval PM (jam)'] = df_stock['Kode Material'].apply(get_pm_interval)
     df_stock['Kebutuhan/bin (PM)'] = np.ceil(jam_per_bulan / df_stock['Interval PM (jam)'])
 
-    # Kebutuhan Aktual dari pemakaian
     if not df_pemakaian.empty and 'PLTD' in df_pemakaian.columns and 'Kode Material' in df_pemakaian.columns and 'Qty' in df_pemakaian.columns:
         df_pemakaian['Tanggal'] = pd.to_datetime(df_pemakaian.iloc[:, 0], errors='coerce')
         cutoff = pd.Timestamp.now() - pd.DateOffset(months=6)
@@ -351,9 +408,8 @@ def analisis_stok():
     )
     df_stock['Propose Kirim'] = np.ceil(np.maximum(0, (df_stock['Kebutuhan/hari'] * df_stock['Durasi Kirim (hari)']) - df_stock['Qty']))
 
-    # Filter
     st.sidebar.header("Filter Analisis")
-    pltd_filter = st.sidebar.multiselect("PLTD", sorted(df_stock['PLTD'].unique()), default=sorted(df_stock['PLTD'].unique()))
+    pltd_filter = st.sidebar.multiselect("PLTD", sorted(df_stock['PLTD'].unique()), default=sorted(df_stock['PLTD'].unique())[:5])
     jenis_filter = st.sidebar.multiselect("Jenis", ['Preventive', 'Corrective'], default=['Preventive', 'Corrective'])
     status_filter = st.sidebar.multiselect("Status", ['🔴 Critical Reorder', '🟡 Warning', '🟢 Aman'],
                                          default=['🔴 Critical Reorder', '🟡 Warning', '🟢 Aman'])
@@ -371,14 +427,12 @@ def analisis_stok():
         cols_show.append('Harga Satuan')
     st.dataframe(df_view[cols_show], use_container_width=True, hide_index=True)
 
-    # Visual
-    st.subheader("⏳ Lead Time Alert Chart")
+    st.subheader("⏳ Lead Time Alert")
     alert_counts = df_view['Status'].value_counts()
     st.bar_chart(alert_counts)
 
-    # Timeline contoh
-    st.subheader("📅 Timeline Material PM Tertentu")
     if not df_view[df_view['Jenis'] == 'Preventive'].empty:
+        st.subheader("📅 Timeline Material PM Tertentu")
         mat = st.selectbox("Pilih Material Preventive", df_view[df_view['Jenis'] == 'Preventive']['Nama Material'].unique())
         if mat:
             row = df_view[df_view['Nama Material'] == mat].iloc[0]
@@ -395,10 +449,7 @@ def pemakaian():
         st.warning("Data pemakaian tidak tersedia.")
         return
 
-    # Standardize columns (simple approach)
     df = df_pemakaian.copy()
-    # rename if necessary (this example assumes columns: Tanggal, PLTD, Kode Material, Nama Material, Qty, Biaya, No Transaksi)
-    # We'll try to map common names
     col_map = {}
     for col in df.columns:
         col_l = col.lower()
@@ -421,52 +472,49 @@ def pemakaian():
     df['No Transaksi'] = df[col_map['No Transaksi']].astype(str) if 'No Transaksi' in col_map else ''
     df['Consume Status'] = df['No Transaksi'].apply(lambda x: 'Need Consume' if x in ['', 'nan', 'None'] else 'Consumed')
 
-    # Sidebar filters
     st.sidebar.header("Filter Pemakaian")
     pltd_opt = sorted(df['PLTD'].unique())
-    sel_pltd = st.sidebar.multiselect("PLTD", pltd_opt, default=pltd_opt)
+    sel_pltd = st.sidebar.multiselect("PLTD", pltd_opt, default=pltd_opt[:5] if len(pltd_opt)>5 else pltd_opt)
     kode_opt = sorted(df['Kode Material'].unique())
-    sel_kode = st.sidebar.multiselect("Kode Material", kode_opt, default=kode_opt)
-    jenis_opt = ['Preventive', 'Corrective']
-    sel_jenis = st.sidebar.multiselect("Jenis", jenis_opt, default=jenis_opt)
+    sel_kode = st.sidebar.multiselect("Kode Material", kode_opt)
     consume_opt = ['Consumed', 'Need Consume']
     sel_consume = st.sidebar.multiselect("Status Consume", consume_opt, default=consume_opt)
 
-    # Apply filters
     df_f = df.copy()
     if sel_pltd: df_f = df_f[df_f['PLTD'].isin(sel_pltd)]
     if sel_kode: df_f = df_f[df_f['Kode Material'].isin(sel_kode)]
     if sel_consume: df_f = df_f[df_f['Consume Status'].isin(sel_consume)]
-    # jenis filter needs merging with stock to get Jenis
-    if sel_jenis:
-        df_stock = load_stock_per_pltd()
-        type_map = df_stock[['Kode Material', 'Jenis']].drop_duplicates()
-        df_f = df_f.merge(type_map, on='Kode Material', how='left')
-        df_f = df_f[df_f['Jenis'].isin(sel_jenis)]
 
-    # KPIs
     kpi1, kpi2, kpi3 = st.columns(3)
     kpi1.metric("Total Qty", f"{df_f['Qty'].sum():,.0f}")
     kpi2.metric("Total Biaya", f"Rp {df_f['Biaya'].sum():,.0f}")
     kpi3.metric("Need Consume", len(df_f[df_f['Consume Status'] == 'Need Consume']))
 
-    # Top 10
+    st.markdown("---")
     col1, col2 = st.columns(2)
     with col1:
-        st.subheader("🔝 Top 10 Material by Qty")
-        top_mat = df_f.groupby('Nama Material')['Qty'].sum().nlargest(10)
-        st.bar_chart(top_mat)
+        st.subheader("🔝 Top 10 Material (Qty)")
+        top_mat = df_f.groupby('Nama Material')['Qty'].sum().nlargest(10).reset_index()
+        fig_mat = px.bar(top_mat, x='Qty', y='Nama Material', orientation='h',
+                         text='Qty', color='Qty', color_continuous_scale='Blues')
+        fig_mat.update_layout(yaxis={'categoryorder':'total ascending'}, height=400)
+        fig_mat.update_traces(textposition='outside')
+        st.plotly_chart(fig_mat, use_container_width=True, config={'doubleClick': 'reset'})
     with col2:
-        st.subheader("🏢 Top 10 Site by Qty")
-        top_site = df_f.groupby('PLTD')['Qty'].sum().nlargest(10)
-        st.bar_chart(top_site)
+        st.subheader("🏢 Top 10 Site (Qty)")
+        top_site = df_f.groupby('PLTD')['Qty'].sum().nlargest(10).reset_index()
+        fig_site = px.bar(top_site, x='Qty', y='PLTD', orientation='h',
+                          text='Qty', color='Qty', color_continuous_scale='Teal')
+        fig_site.update_layout(yaxis={'categoryorder':'total ascending'}, height=400)
+        fig_site.update_traces(textposition='outside')
+        st.plotly_chart(fig_site, use_container_width=True, config={'doubleClick': 'reset'})
 
     st.subheader("⚠️ Need Consume Detail")
     need = df_f[df_f['Consume Status'] == 'Need Consume']
-    st.dataframe(need[['Tanggal', 'PLTD', 'Kode Material', 'Nama Material', 'Qty', 'No Transaksi']],
+    st.dataframe(need.head(20)[['Tanggal', 'PLTD', 'Kode Material', 'Nama Material', 'Qty', 'Biaya', 'No Transaksi']],
                  use_container_width=True, hide_index=True)
 
-    # Map with status (using stock data for criticality)
+    st.markdown("---")
     st.subheader("📍 Peta Sebaran PLTD & Status Stok")
     df_stock = load_stock_per_pltd()
     if not df_stock.empty:
@@ -476,12 +524,12 @@ def pemakaian():
         stock_agg['lon'] = stock_agg['PLTD'].apply(lambda x: PLTD_COORDS.get(x, (None, None))[1])
         stock_agg = stock_agg.dropna(subset=['lat'])
         color_map = {'🟢 Aman': 'green', '🔴 Kritis': 'red'}
-        fig = px.scatter_mapbox(stock_agg, lat='lat', lon='lon', color='Status',
-                                color_discrete_map=color_map,
-                                hover_name='PLTD', hover_data=['Qty'],
-                                zoom=4, height=500)
-        fig.update_layout(mapbox_style="open-street-map")
-        st.plotly_chart(fig, use_container_width=True)
+        fig_map = px.scatter_mapbox(stock_agg, lat='lat', lon='lon', color='Status',
+                                    color_discrete_map=color_map,
+                                    hover_name='PLTD', hover_data=['Qty'],
+                                    zoom=3.5, height=350, size_max=15)
+        fig_map.update_layout(mapbox_style="open-street-map", margin={"r":0,"t":0,"l":0,"b":0})
+        st.plotly_chart(fig_map, use_container_width=True, config={'doubleClick': 'reset'})
 
 # ======================== PAGE 5: TRANSAKSI PROJECT ========================
 def transaksi_project():
@@ -527,32 +575,45 @@ def transaksi_project():
         st.markdown("---")
         st.subheader("📈 Tren Permintaan Harian")
         trend_data = df_f.groupby('Tgl_Str').size().reset_index(name='Requests')
-        fig_tr = px.line(trend_data, x='Tgl_Str', y='Requests', markers=True, text='Requests')
-        st.plotly_chart(fig_tr, use_container_width=True)
+        if len(trend_data) > 60:
+            trend_data = df_f.groupby(pd.Grouper(key='TANGGAL', freq='W')).size().reset_index(name='Requests')
+            trend_data['Tgl_Str'] = trend_data['TANGGAL'].dt.strftime('%Y-%m-%d')
+        fig_tr = px.line(trend_data, x='Tgl_Str', y='Requests', markers=True,
+                         text='Requests', color_discrete_sequence=['#0A2540'])
+        fig_tr.update_traces(textposition='top center', line_shape='spline')
+        fig_tr.update_layout(height=350)
+        st.plotly_chart(fig_tr, use_container_width=True, config={'doubleClick': 'reset'})
 
         st.markdown("---")
         c1, c2 = st.columns(2)
         with c1:
             st.subheader("🏢 Top Site Request (QTY)")
-            top_site = df_f.groupby('WH TUJUAN')['QTY'].sum().nlargest(8)
-            st.bar_chart(top_site)
+            top_site = df_f.groupby('WH TUJUAN')['QTY'].sum().nlargest(8).reset_index()
+            fig_site = px.bar(top_site, x='QTY', y='WH TUJUAN', orientation='h',
+                              text='QTY', color='QTY', color_continuous_scale='Teal')
+            fig_site.update_layout(yaxis={'categoryorder':'total ascending'}, height=350)
+            fig_site.update_traces(textposition='outside', texttemplate='%{text:,.0f}')
+            st.plotly_chart(fig_site, use_container_width=True, config={'doubleClick': 'reset'})
         with c2:
             st.subheader("🔝 Top Requested Items")
-            top_item = df_f.groupby('ITEM NAME')['QTY'].sum().nlargest(8)
-            st.bar_chart(top_item)
+            top_item = df_f.groupby('ITEM NAME')['QTY'].sum().nlargest(8).reset_index()
+            fig_item = px.bar(top_item, x='QTY', y='ITEM NAME', orientation='h',
+                              text='QTY', color='QTY', color_continuous_scale='Blues')
+            fig_item.update_layout(yaxis={'categoryorder':'total ascending'}, height=350)
+            fig_item.update_traces(textposition='outside', texttemplate='%{text:,.0f}')
+            st.plotly_chart(fig_item, use_container_width=True, config={'doubleClick': 'reset'})
 
         st.markdown("---")
         st.subheader("⚠️ Highlight Outstanding")
         df_out = df_f[~df_f['STATUS'].isin(['DELIVERED', 'CANCEL'])]
-        st.dataframe(df_out[['TANGGAL', 'PROJECT', 'WH TUJUAN', 'ITEM NAME', 'QTY', 'STATUS']],
+        st.dataframe(df_out[['TANGGAL', 'PROJECT', 'WH TUJUAN', 'ITEM NAME', 'QTY', 'STATUS']].head(15),
                      use_container_width=True, hide_index=True)
 
-        st.subheader("📋 Detail Movement Record")
-        st.dataframe(df_f[['TANGGAL', 'PROJECT', 'WH TUJUAN', 'ITEM NAME', 'QTY', 'TOTAL COST', 'STATUS']],
+        st.subheader("📋 Detail Movement Record & Status")
+        st.dataframe(df_f[['TANGGAL', 'PROJECT', 'WH TUJUAN', 'ITEM NAME', 'QTY', 'TOTAL COST', 'STATUS']].head(20),
                      use_container_width=True, hide_index=True)
 
 # ======================== BUILD NAVIGATION ========================
-# Register pages
 home_pg = st.Page(home, title="Beranda", icon="🏠", default=True)
 stock_pg = st.Page(stock_pltd, title="Stok PLTD", icon="📦")
 analisis_pg = st.Page(analisis_stok, title="Analisis Stok", icon="📊")
