@@ -5,13 +5,11 @@ import requests
 import io
 import plotly.express as px
 import plotly.graph_objects as go
-from datetime import datetime, timedelta
 import gspread
 from gspread_dataframe import get_as_dataframe
 from gspread.exceptions import WorksheetNotFound
-import re
 
-# ======================== PAGE CONFIG ========================
+# ======================== KONFIGURASI HALAMAN ========================
 st.set_page_config(
     page_title="Dashboard PLTD Bach",
     page_icon="⚡",
@@ -19,17 +17,18 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# ======================== CUSTOM CSS ========================
+# ======================== CSS CUSTOM ========================
 st.markdown("""
 <style>
-    /* Overall background */
+    /* Latar utama */
     .main {
         background-color: #F5F7FA;
     }
-    /* Sidebar */
+    /* Sidebar background */
     [data-testid="stSidebar"] {
         background-color: #0A2540 !important;
     }
+    /* Judul sidebar */
     .sidebar-title {
         color: #FFFFFF;
         font-size: 20px;
@@ -39,25 +38,31 @@ st.markdown("""
         padding: 12px;
         border-bottom: 1px solid rgba(255,255,255,0.2);
     }
+    /* Label filter di sidebar */
     [data-testid="stSidebar"] label p {
         color: #CCCCCC !important;
         font-weight: 500 !important;
     }
+    /* Teks navigasi (menu halaman) di sidebar */
+    [data-testid="stSidebarNav"] span {
+        color: #FFFFFF !important;
+        font-weight: 600 !important;
+    }
+    [data-testid="stSidebarNav"] a {
+        color: #FFFFFF !important;
+    }
+    /* Tombol sidebar */
     [data-testid="stSidebar"] button svg,
     button[kind="headerNoSpacing"] svg {
         fill: #FFFFFF !important;
     }
-    /* Metric cards */
+    /* Kartu metric */
     div[data-testid="stMetricValue"] {
         font-size: 28px;
         font-weight: 800;
         color: #0A2540;
     }
-    div[data-testid="stMetricLabel"] {
-        font-weight: 600;
-        color: #333333;
-    }
-    /* Plotly charts */
+    /* Plotly chart container */
     .stPlotlyChart {
         background-color: #FFFFFF;
         border-radius: 10px;
@@ -70,7 +75,7 @@ st.markdown("""
         border-radius: 10px;
         padding: 8px;
     }
-    /* Buttons */
+    /* Tombol umum */
     .stButton>button {
         background-color: #1F4E79;
         color: white;
@@ -84,7 +89,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ======================== DATA SOURCES ========================
+# ======================== SUMBER DATA ========================
 PLTD_SHEETS = {
     'Pemaron':        '1HN-X9OhLTGo5Ieu2uzBa6VHh0UlFdGTiw56yOIX5VgI',
     'Mangoli':        '1agNRbhpUJRqsA91eDlDq49BKpbW5x3v-2DiAGlbdq9s',
@@ -142,32 +147,45 @@ PM_INTERVAL = {
 }
 DEFAULT_PM_INTERVAL = 500
 
-# ======================== HELPER: FIX PRIVATE KEY ========================
+# ======================== PERBAIKAN AUTENTIKASI ========================
 def safe_credentials():
-    """Parse and fix common formatting issues in Streamlit secrets for GCP."""
+    """Mengambil kredensial dari st.secrets dan memastikan private_key valid."""
     creds = dict(st.secrets["gcp_service_account"])
-    # private_key might come with literal \n strings instead of newline characters
-    if 'private_key' in creds:
-        pk = creds['private_key']
-        # Replace literal "\n" with actual newline
+    # Bersihkan private_key: hapus spasi ekstra, pastikan header/footer ada
+    pk = creds.get('private_key', '')
+    if pk:
+        pk = pk.strip()
+        # Ganti literal \n dengan newline
         pk = pk.replace('\\n', '\n')
-        # Ensure proper header/footer if missing
+        # Pastikan header PEM ada
         if not pk.startswith('-----BEGIN PRIVATE KEY-----'):
             pk = '-----BEGIN PRIVATE KEY-----\n' + pk
-        if not pk.endswith('-----END PRIVATE KEY-----\n'):
+        if not pk.endswith('-----END PRIVATE KEY-----'):
             pk = pk + '\n-----END PRIVATE KEY-----\n'
+        # Hapus baris kosong di awal/akhir
+        pk = '\n'.join([line for line in pk.split('\n') if line.strip() != ''])
+        # Tambahkan newline di akhir jika belum ada
+        if not pk.endswith('\n'):
+            pk += '\n'
         creds['private_key'] = pk
     return creds
 
 @st.cache_resource
 def get_gspread_client():
-    credentials = safe_credentials()
-    return gspread.service_account_from_dict(credentials)
+    """Membuat client gspread dengan penanganan error."""
+    try:
+        credentials = safe_credentials()
+        return gspread.service_account_from_dict(credentials)
+    except Exception as e:
+        st.error(f"Gagal autentikasi Google Sheets. Periksa Secrets di Streamlit Cloud: {e}")
+        return None
 
-# ======================== DATA LOADER FUNCTIONS ========================
+# ======================== LOADER DATA (DENGAN FALLBACK) ========================
 @st.cache_data(ttl=600)
 def load_stock_per_pltd():
     client = get_gspread_client()
+    if client is None:
+        return pd.DataFrame()
     all_data = []
     for pltd, sheet_id in PLTD_SHEETS.items():
         try:
@@ -195,8 +213,8 @@ def load_stock_per_pltd():
                         'Type Material': tipe,
                         'Qty': qty
                     })
-        except Exception as e:
-            pass  # quietly ignore if sheet not accessible
+        except Exception:
+            continue
     df = pd.DataFrame(all_data)
     if not df.empty:
         df['Jenis'] = df['Kode Material'].apply(lambda x: 'Preventive' if x in PREVENTIVE_CODES else 'Corrective')
@@ -205,21 +223,24 @@ def load_stock_per_pltd():
 @st.cache_data(ttl=600)
 def load_master_sheets():
     client = get_gspread_client()
-    sh = client.open_by_key(MASTER_SHEET_ID)
+    if client is None:
+        return {'pemakaian': pd.DataFrame(), 'stok_cikande': pd.DataFrame(), 'harga': pd.DataFrame()}
+    try:
+        sh = client.open_by_key(MASTER_SHEET_ID)
+    except Exception as e:
+        st.warning(f"Tidak bisa membuka master spreadsheet: {e}")
+        return {'pemakaian': pd.DataFrame(), 'stok_cikande': pd.DataFrame(), 'harga': pd.DataFrame()}
     result = {}
     try:
-        ws = sh.worksheet('Gabungan')
-        result['pemakaian'] = get_as_dataframe(ws, evaluate_formulas=True)
-    except WorksheetNotFound:
+        result['pemakaian'] = get_as_dataframe(sh.worksheet('Gabungan'), evaluate_formulas=True)
+    except:
         result['pemakaian'] = pd.DataFrame()
     try:
-        ws = sh.worksheet('Sheet1')
-        result['stok_cikande'] = get_as_dataframe(ws, evaluate_formulas=True)
+        result['stok_cikande'] = get_as_dataframe(sh.worksheet('Sheet1'), evaluate_formulas=True)
     except:
         result['stok_cikande'] = pd.DataFrame()
     try:
-        ws = sh.worksheet('DARI TARIKAN')
-        result['harga'] = get_as_dataframe(ws, evaluate_formulas=True)
+        result['harga'] = get_as_dataframe(sh.worksheet('DARI TARIKAN'), evaluate_formulas=True)
     except:
         result['harga'] = pd.DataFrame()
     return result
@@ -242,12 +263,14 @@ def load_project_data():
         res_ops = requests.get(SHAREPOINT_PROJECT_OPS, headers=headers, timeout=20)
         df_ops = pd.read_excel(io.BytesIO(res_ops.content))
         df_ops['PROJECT'] = 'PROJECT PLTD'
-    except: pass
+    except:
+        pass
     try:
         res_das = requests.get(SHAREPOINT_PROJECT_DAS, headers=headers, timeout=20)
         df_das = pd.read_excel(io.BytesIO(res_das.content))
         df_das['PROJECT'] = 'PROJECT DAS'
-    except: pass
+    except:
+        pass
     df = pd.concat([df_ops, df_das], ignore_index=True)
     if not df.empty and 'TANGGAL' in df.columns:
         df['TANGGAL'] = pd.to_datetime(df['TANGGAL'], errors='coerce')
@@ -255,11 +278,10 @@ def load_project_data():
         df['Tahun'] = df['TANGGAL'].dt.year.astype(str)
         df['Bulan'] = df['TANGGAL'].dt.strftime('%B')
         df['Tgl_Str'] = df['TANGGAL'].dt.strftime('%Y-%m-%d')
-    # Ensure numeric columns
-    if 'QTY' in df.columns:
-        df['QTY'] = pd.to_numeric(df['QTY'], errors='coerce').fillna(0)
-    if 'TOTAL COST' in df.columns:
-        df['TOTAL COST'] = pd.to_numeric(df['TOTAL COST'], errors='coerce').fillna(0)
+    # Konversi paksa numerik
+    for col in ['QTY', 'TOTAL COST']:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
     return df
 
 def get_duration(pltd):
@@ -268,18 +290,21 @@ def get_duration(pltd):
 def get_pm_interval(kode):
     return PM_INTERVAL.get(str(kode).strip(), DEFAULT_PM_INTERVAL)
 
-# ======================== PAGE 1: HOME ========================
+# ======================== HALAMAN: BERANDA ========================
 def home():
     st.title("⚡ Dashboard Monitoring Stok & Logistik PLTD")
     st.markdown("Ringkasan Cepat & Navigasi")
 
     df_stock = load_stock_per_pltd()
+    if df_stock.empty:
+        st.warning("Data stok tidak tersedia. Periksa koneksi Google Sheets.")
+        return
 
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric("Total PLTD", len(df_stock['PLTD'].unique()) if not df_stock.empty else 0)
+        st.metric("Total PLTD", df_stock['PLTD'].nunique())
     with col2:
-        total_qty = df_stock['Qty'].sum() if not df_stock.empty else 0
+        total_qty = df_stock['Qty'].sum()
         st.metric("Total Stok (unit)", f"{total_qty:,.0f}")
     with col3:
         st.metric("Material Kritis", "Lihat Analisis Stok")
@@ -300,38 +325,39 @@ def home():
             st.switch_page("pages/transaksi_project")
 
     st.markdown("---")
-    if not df_stock.empty:
-        coords = df_stock[['PLTD']].drop_duplicates()
-        coords['lat'] = coords['PLTD'].apply(lambda x: PLTD_COORDS.get(x, (None, None))[0])
-        coords['lon'] = coords['PLTD'].apply(lambda x: PLTD_COORDS.get(x, (None, None))[1])
-        valid = coords.dropna(subset=['lat'])
-        if not valid.empty:
-            st.subheader("📍 Lokasi PLTD")
-            st.map(valid, latitude='lat', longitude='lon', zoom=4, height=350)
+    coords = df_stock[['PLTD']].drop_duplicates()
+    coords['lat'] = coords['PLTD'].apply(lambda x: PLTD_COORDS.get(x, (None, None))[0])
+    coords['lon'] = coords['PLTD'].apply(lambda x: PLTD_COORDS.get(x, (None, None))[1])
+    valid = coords.dropna(subset=['lat'])
+    if not valid.empty:
+        st.subheader("📍 Lokasi PLTD")
+        st.map(valid, latitude='lat', longitude='lon', zoom=4, height=350)
 
-# ======================== PAGE 2: STOK PLTD ========================
+# ======================== HALAMAN: STOK PLTD ========================
 def stock_pltd():
     st.title("📦 Stock Material PLTD Aktual")
 
     df_stock = load_stock_per_pltd()
+    if df_stock.empty:
+        st.warning("Data stok tidak tersedia.")
+        return
     master = load_master_sheets()
     df_cikande = master['stok_cikande']
     df_deliv = load_delivery_data()
 
     st.sidebar.header("Filter Stok PLTD")
-    pltd_list = sorted(df_stock['PLTD'].unique()) if not df_stock.empty else []
-    selected_pltd = st.sidebar.multiselect("PLTD", pltd_list, default=pltd_list[:5] if len(pltd_list)>5 else pltd_list)
+    pltd_list = sorted(df_stock['PLTD'].unique())
+    selected_pltd = st.sidebar.multiselect("PLTD", pltd_list, default=pltd_list[:5])
     kode_list = sorted(df_stock['Kode Material'].unique())
     selected_kode = st.sidebar.multiselect("Kode Material", kode_list)
-    jenis_list = ['Preventive', 'Corrective']
-    selected_jenis = st.sidebar.multiselect("Jenis Material", jenis_list, default=jenis_list)
+    selected_jenis = st.sidebar.multiselect("Jenis Material", ['Preventive', 'Corrective'], default=['Preventive', 'Corrective'])
 
     df = df_stock.copy()
     if selected_pltd: df = df[df['PLTD'].isin(selected_pltd)]
     if selected_kode: df = df[df['Kode Material'].isin(selected_kode)]
     if selected_jenis: df = df[df['Jenis'].isin(selected_jenis)]
 
-    st.subheader("🔹 Stok Aktual per PLTD")
+    st.subheader("🔹 Stok Aktual")
     st.dataframe(df[['PLTD', 'Kode Material', 'Nama Material', 'Type Material', 'Qty', 'Jenis']],
                  use_container_width=True, hide_index=True)
 
@@ -350,7 +376,7 @@ def stock_pltd():
         else:
             df_deliv['Kategori Pengiriman'] = 'Proses Kirim'
         kat_list = df_deliv['Kategori Pengiriman'].unique()
-        selected_kat = st.multiselect("Kategori Pengiriman", kat_list, default=kat_list)
+        selected_kat = st.multiselect("Kategori", kat_list, default=kat_list)
         df_deliv_f = df_deliv[df_deliv['Kategori Pengiriman'].isin(selected_kat)]
         st.dataframe(df_deliv_f, use_container_width=True, hide_index=True)
     else:
@@ -362,11 +388,14 @@ def stock_pltd():
     else:
         st.info("Data gudang Cikande tidak ditemukan.")
 
-# ======================== PAGE 3: ANALISIS STOK ========================
+# ======================== HALAMAN: ANALISIS STOK ========================
 def analisis_stok():
     st.title("📊 Analisis Stok & Kebutuhan Material")
 
     df_stock = load_stock_per_pltd()
+    if df_stock.empty:
+        st.warning("Data stok tidak tersedia.")
+        return
     master = load_master_sheets()
     df_harga = master['harga']
     df_pemakaian = master['pemakaian']
@@ -384,13 +413,16 @@ def analisis_stok():
     df_stock['Kebutuhan/bin (PM)'] = np.ceil(jam_per_bulan / df_stock['Interval PM (jam)'])
 
     if not df_pemakaian.empty and 'PLTD' in df_pemakaian.columns and 'Kode Material' in df_pemakaian.columns and 'Qty' in df_pemakaian.columns:
-        df_pemakaian['Tanggal'] = pd.to_datetime(df_pemakaian.iloc[:, 0], errors='coerce')
-        cutoff = pd.Timestamp.now() - pd.DateOffset(months=6)
-        recent = df_pemakaian[df_pemakaian['Tanggal'] >= cutoff]
-        konsumsi = recent.groupby(['PLTD', 'Kode Material'])['Qty'].sum() / 6
-        konsumsi = konsumsi.reset_index(name='Kebutuhan/bin (Aktual)')
-        df_stock = df_stock.merge(konsumsi, on=['PLTD', 'Kode Material'], how='left')
-        df_stock['Kebutuhan/bin (Aktual)'] = df_stock['Kebutuhan/bin (Aktual)'].fillna(0)
+        try:
+            df_pemakaian['Tanggal'] = pd.to_datetime(df_pemakaian.iloc[:, 0], errors='coerce')
+            cutoff = pd.Timestamp.now() - pd.DateOffset(months=6)
+            recent = df_pemakaian[df_pemakaian['Tanggal'] >= cutoff]
+            konsumsi = recent.groupby(['PLTD', 'Kode Material'])['Qty'].sum() / 6
+            konsumsi = konsumsi.reset_index(name='Kebutuhan/bin (Aktual)')
+            df_stock = df_stock.merge(konsumsi, on=['PLTD', 'Kode Material'], how='left')
+            df_stock['Kebutuhan/bin (Aktual)'] = df_stock['Kebutuhan/bin (Aktual)'].fillna(0)
+        except:
+            df_stock['Kebutuhan/bin (Aktual)'] = 0
     else:
         df_stock['Kebutuhan/bin (Aktual)'] = 0
 
@@ -408,7 +440,7 @@ def analisis_stok():
     )
     df_stock['Propose Kirim'] = np.ceil(np.maximum(0, (df_stock['Kebutuhan/hari'] * df_stock['Durasi Kirim (hari)']) - df_stock['Qty']))
 
-    st.sidebar.header("Filter Analisis")
+    st.sidebar.header("Filter")
     pltd_filter = st.sidebar.multiselect("PLTD", sorted(df_stock['PLTD'].unique()), default=sorted(df_stock['PLTD'].unique())[:5])
     jenis_filter = st.sidebar.multiselect("Jenis", ['Preventive', 'Corrective'], default=['Preventive', 'Corrective'])
     status_filter = st.sidebar.multiselect("Status", ['🔴 Critical Reorder', '🟡 Warning', '🟢 Aman'],
@@ -419,7 +451,7 @@ def analisis_stok():
     if jenis_filter: df_view = df_view[df_view['Jenis'].isin(jenis_filter)]
     if status_filter: df_view = df_view[df_view['Status'].isin(status_filter)]
 
-    st.subheader("📋 Tabel Kebutuhan & Lead Time")
+    st.subheader("📋 Tabel Kebutuhan")
     cols_show = ['PLTD', 'Kode Material', 'Nama Material', 'Jenis', 'Qty',
                  'Kebutuhan/bin (PM)', 'Kebutuhan/bin (Aktual)',
                  'Sisa Hari Stok', 'Durasi Kirim (hari)', 'Status', 'Propose Kirim']
@@ -432,14 +464,14 @@ def analisis_stok():
     st.bar_chart(alert_counts)
 
     if not df_view[df_view['Jenis'] == 'Preventive'].empty:
-        st.subheader("📅 Timeline Material PM Tertentu")
+        st.subheader("📅 Timeline Material PM")
         mat = st.selectbox("Pilih Material Preventive", df_view[df_view['Jenis'] == 'Preventive']['Nama Material'].unique())
         if mat:
             row = df_view[df_view['Nama Material'] == mat].iloc[0]
             st.metric("Sisa Hari Stok", f"{row['Sisa Hari Stok']:.0f}")
             st.progress(min(row['Sisa Hari Stok']/row['Durasi Kirim (hari)'], 1.0))
 
-# ======================== PAGE 4: PEMAKAIAN ========================
+# ======================== HALAMAN: PEMAKAIAN ========================
 def pemakaian():
     st.title("🔥 Pemakaian Material & Peta Sebaran")
 
@@ -475,18 +507,14 @@ def pemakaian():
     st.sidebar.header("Filter Pemakaian")
     pltd_opt = sorted(df['PLTD'].unique())
     sel_pltd = st.sidebar.multiselect("PLTD", pltd_opt, default=pltd_opt[:5] if len(pltd_opt)>5 else pltd_opt)
-    kode_opt = sorted(df['Kode Material'].unique())
-    sel_kode = st.sidebar.multiselect("Kode Material", kode_opt)
-    consume_opt = ['Consumed', 'Need Consume']
-    sel_consume = st.sidebar.multiselect("Status Consume", consume_opt, default=consume_opt)
+    sel_consume = st.sidebar.multiselect("Status Consume", ['Consumed', 'Need Consume'], default=['Consumed', 'Need Consume'])
 
     df_f = df.copy()
     if sel_pltd: df_f = df_f[df_f['PLTD'].isin(sel_pltd)]
-    if sel_kode: df_f = df_f[df_f['Kode Material'].isin(sel_kode)]
     if sel_consume: df_f = df_f[df_f['Consume Status'].isin(sel_consume)]
 
     kpi1, kpi2, kpi3 = st.columns(3)
-    kpi1.metric("Total Qty", f"{df_f['Qty'].sum():,.0f}")
+    kpi1.metric("Total Qty Pemakaian", f"{df_f['Qty'].sum():,.0f}")
     kpi2.metric("Total Biaya", f"Rp {df_f['Biaya'].sum():,.0f}")
     kpi3.metric("Need Consume", len(df_f[df_f['Consume Status'] == 'Need Consume']))
 
@@ -527,15 +555,15 @@ def pemakaian():
         fig_map = px.scatter_mapbox(stock_agg, lat='lat', lon='lon', color='Status',
                                     color_discrete_map=color_map,
                                     hover_name='PLTD', hover_data=['Qty'],
-                                    zoom=3.5, height=350, size_max=15)
+                                    zoom=3.5, height=350)
         fig_map.update_layout(mapbox_style="open-street-map", margin={"r":0,"t":0,"l":0,"b":0})
         st.plotly_chart(fig_map, use_container_width=True, config={'doubleClick': 'reset'})
 
-# ======================== PAGE 5: TRANSAKSI PROJECT ========================
+# ======================== HALAMAN: TRANSAKSI PROJECT ========================
 def transaksi_project():
     df_raw = load_project_data()
     if df_raw.empty:
-        st.warning("Data proyek tidak tersedia.")
+        st.warning("Data project tidak tersedia.")
         return
 
     if 'reset_counter' not in st.session_state:
@@ -613,7 +641,7 @@ def transaksi_project():
         st.dataframe(df_f[['TANGGAL', 'PROJECT', 'WH TUJUAN', 'ITEM NAME', 'QTY', 'TOTAL COST', 'STATUS']].head(20),
                      use_container_width=True, hide_index=True)
 
-# ======================== BUILD NAVIGATION ========================
+# ======================== DAFTAR HALAMAN ========================
 home_pg = st.Page(home, title="Beranda", icon="🏠", default=True)
 stock_pg = st.Page(stock_pltd, title="Stok PLTD", icon="📦")
 analisis_pg = st.Page(analisis_stok, title="Analisis Stok", icon="📊")
