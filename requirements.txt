@@ -1,5 +1,6 @@
-streamlit
+streamlit>=1.31
 pandas
-requests
-openpyxl
 plotly
+gspread
+openpyxl
+requests
