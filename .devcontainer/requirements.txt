@@ -1,0 +1,6 @@
+streamlit>=1.31
+pandas
+plotly
+gspread
+openpyxl
+requests
