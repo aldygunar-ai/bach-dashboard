@@ -4,6 +4,7 @@ import numpy as np
 import plotly.express as px
 import gspread
 from gspread_dataframe import get_as_dataframe
+from gspread.exceptions import WorksheetNotFound
 import requests
 import io
 import re
@@ -49,7 +50,6 @@ MASTER_CIKANDE_ID = '1aZZnnBjSybgzEgUECdLSCaPJ_rMKNHJmfGEwetOARbs'
 DELIVERY_URL = "https://bachmulti-my.sharepoint.com/:x:/g/personal/prabawa_bachgroup_co_id/IQDpLV2xOcHmS51kfDxWqHQAAUHHovDCqOPtICGu3HUp6nc?download=1"
 
 # ======================== PREVENTIVE DETECTION ========================
-# Data dari user: Nama Material, Kode Material
 PREVENTIVE_TABLE = [
     ("Oil Filter", "LF3325"),
     ("Oil Filter By pass", "LF777"),
@@ -74,49 +74,50 @@ PREVENTIVE_TABLE = [
     ("Oli Shell (IBC)", "Rimula R4 X 15W-40"),
 ]
 
-# Normalisasi: kumpulan keyword dari nama material preventive (lowercase)
 PREVENTIVE_NAME_KEYWORDS = {
     "oil filter", "element water separator", "fuel filter", "water filter",
     "cylinder head cover gasket", "air filter element", "v-belt",
     "oli shell", "rimula", "v belt"
 }
 
-# Normalisasi: kode preventive (lowercase, tanpa spasi)
 def _norm(s):
     return re.sub(r'\s+', '', str(s).lower())
 
 PREVENTIVE_CODES_NORM = set()
 for _, code in PREVENTIVE_TABLE:
-    # Split multi-code
     for part in re.split(r'\s*/\s*', code):
         PREVENTIVE_CODES_NORM.add(_norm(part))
 
 def is_preventive(kode_material, nama_material=""):
-    """Deteksi apakah material termasuk Preventive."""
     if not kode_material and not nama_material:
         return False
     kode_norm = _norm(kode_material) if kode_material else ""
     nama_norm = _norm(nama_material) if nama_material else ""
 
-    # 1) Cek kode: apakah ada bagian kode yang cocok dengan PREVENTIVE_CODES_NORM
+    # Cek kode
     if kode_norm:
-        # Split kode jika mengandung /
         for part in re.split(r'\s*/\s*', kode_norm):
-            part = part.strip()
             if part in PREVENTIVE_CODES_NORM:
                 return True
-        # Cek substring (misal kode mengandung "LF3325" tapi ada tambahan)
         for pc in PREVENTIVE_CODES_NORM:
             if len(pc) >= 3 and pc in kode_norm:
                 return True
-
-    # 2) Cek nama material terhadap keyword preventive
+    # Cek nama
     if nama_norm:
         for kw in PREVENTIVE_NAME_KEYWORDS:
             if kw in nama_norm:
                 return True
-
     return False
+
+def is_valid_material(kode, nama):
+    """Filter baris anomali: harus ada nama material, dan kode bukan hanya angka pendek (1-3 digit)"""
+    if not nama or not nama.strip():
+        return False
+    kode_clean = kode.strip() if kode else ''
+    # Jika kode hanya terdiri dari 1-3 digit angka, tolak (kemungkinan sampah)
+    if re.match(r'^\d{1,3}$', kode_clean):
+        return False
+    return True
 
 # ======================== GSPREAD CLIENT ========================
 @st.cache_resource
@@ -129,7 +130,7 @@ def get_gspread_client():
 # ======================== LOADERS ========================
 @st.cache_data(ttl=600)
 def load_stock_all():
-    """Kolom: C = nama, D = kode, I = qty"""
+    """Kolom: C = nama, D = kode, I = qty. Hanya ambil baris valid."""
     client = get_gspread_client()
     rows = []
     for pltd, sid in PLTD_SHEETS.items():
@@ -144,18 +145,18 @@ def load_stock_all():
                 nama = r[2].strip() if len(r) > 2 else ''
                 kode = r[3].strip() if len(r) > 3 else ''
                 qty_str = r[8].strip() if len(r) > 8 else '0'
+                if not is_valid_material(kode, nama):
+                    continue
                 try:
                     qty = float(qty_str.replace(',', ''))
                 except:
                     qty = 0.0
-                if kode or nama:
-                    rows.append((pltd, kode, nama, qty))
+                rows.append((pltd, kode, nama, qty))
         except:
             pass
     df = pd.DataFrame(rows, columns=['PLTD', 'Kode Material', 'Nama Material', 'Qty'])
     if not df.empty:
         df['Jenis'] = df.apply(lambda r: 'Preventive' if is_preventive(r['Kode Material'], r['Nama Material']) else 'Corrective', axis=1)
-        # Pastikan duplikat dibersihkan
         df = df.drop_duplicates(subset=['PLTD', 'Kode Material', 'Nama Material'], keep='last')
     return df
 
@@ -187,20 +188,25 @@ def load_master_data():
 
 @st.cache_data(ttl=600)
 def load_stok_cikande():
-    """Baca sheet 'Sheet1' dari master Cikande, ambil kolom U (index 20)"""
+    """Baca sheet 'Spare Stock' dari master Cikande, kolom U (index 20) untuk QTY Gudang Cikande."""
     client = get_gspread_client()
     try:
         sh = client.open_by_key(MASTER_CIKANDE_ID)
-        ws = sh.worksheet('Sheet1')
+        # Coba sheet "Spare Stock", jika tidak ada fallback ke "Sheet1"
+        try:
+            ws = sh.worksheet('Spare Stock')
+        except WorksheetNotFound:
+            try:
+                ws = sh.worksheet('Sheet1')
+            except:
+                st.warning("Sheet 'Spare Stock' atau 'Sheet1' tidak ditemukan di spreadsheet master Cikande.")
+                return pd.DataFrame()
         data = ws.get_all_values()
         if len(data) < 2:
             return pd.DataFrame()
-        # Baris pertama header, kolom U = index 20
         rows = []
         for r in data[1:]:
             if len(r) > 20:
-                # Coba baca beberapa kolom untuk identifikasi
-                # Asumsikan: A=No, B=Kode, C=Nama, ... U=Qty Cikande
                 kode = r[1].strip() if len(r) > 1 else ''
                 nama = r[2].strip() if len(r) > 2 else ''
                 qty_str = r[20].strip() if len(r) > 20 else '0'
@@ -284,11 +290,9 @@ def page_stock():
         )
         pivot['Total'] = pivot.sum(axis=1)
         pivot = pivot.reset_index()
-        # Susun ulang kolom: Kode Material, Nama Material, ..., Total
         cols_order = ['Kode Material', 'Nama Material'] + [c for c in pivot.columns if c not in ('Kode Material', 'Nama Material')]
         pivot = pivot[cols_order]
 
-        # column_config: pin 2 kolom pertama
         cfg = {
             'Kode Material': st.column_config.TextColumn(pinned=True),
             'Nama Material': st.column_config.TextColumn(pinned=True),
@@ -302,7 +306,6 @@ def page_stock():
     st.subheader("🚚 Status Pengiriman (Outstanding)")
     deliv = load_delivery()
     if not deliv.empty:
-        # Hanya yang outstanding: belum delivered/cancel
         if 'STATUS' in deliv.columns:
             outstanding = deliv[~deliv['STATUS'].isin(['DELIVERED', 'CANCEL', 'COMPLETED'])]
             if not outstanding.empty:
@@ -311,7 +314,7 @@ def page_stock():
                 outstanding['Kategori'] = outstanding['STATUS'].map(mapping).fillna('Lainnya')
                 st.dataframe(outstanding, use_container_width=True, hide_index=True)
             else:
-                st.success("✅ Tidak ada pengiriman outstanding. Semua sudah delivered.")
+                st.success("✅ Tidak ada pengiriman outstanding.")
         else:
             st.dataframe(deliv, use_container_width=True, hide_index=True)
     else:
@@ -323,7 +326,7 @@ def page_stock():
     if not df_cikande.empty:
         st.dataframe(df_cikande, use_container_width=True, hide_index=True)
     else:
-        st.info("Data gudang Cikande belum tersedia. Pastikan sheet 'Sheet1' sudah dibagikan ke service account.")
+        st.info("Data gudang Cikande belum tersedia. Pastikan sheet 'Spare Stock' sudah ada dan service account memiliki akses.")
 
 def page_analisis():
     st.title("📊 Analisis Kebutuhan & Lead Time")
@@ -333,7 +336,6 @@ def page_analisis():
         return
     master1, master2 = load_master_data()
 
-    # Gabung dengan master1
     if master1 is not None and 'pltd' in master1.columns and 'kode_material' in master1.columns:
         df = df.merge(
             master1[['pltd', 'kode_material', 'harga', 'keb_pm', 'keb_aktual']],
@@ -342,7 +344,6 @@ def page_analisis():
             how='left',
             suffixes=('', '_m1')
         )
-        # Buang kolom duplikat
         for c in ['pltd', 'kode_material']:
             if c in df.columns:
                 df.drop(columns=[c], inplace=True)
