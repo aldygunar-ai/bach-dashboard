@@ -9,15 +9,12 @@ import requests
 import io
 import re
 
-# ======================== PAGE CONFIG ========================
 st.set_page_config(page_title="Dashboard PLTD Bach", page_icon="⚡", layout="wide")
 
-# ======================== STYLING ========================
 st.markdown("""
 <style>
     .main { background-color: #F8F9FA; }
     [data-testid="stSidebar"] { background-color: #0A2540 !important; }
-    /* Memutihkan semua teks di sidebar */
     [data-testid="stSidebar"] * { color: #FFFFFF !important; }
     [data-testid="stSidebar"] label p { color: #FFFFFF !important; font-weight: 500 !important; }
     [data-testid="stSidebarNav"] span { color: #FFFFFF !important; }
@@ -30,7 +27,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ======================== DATA SOURCES ========================
 PLTD_SHEETS = {
     'Pemaron': '1HN-X9OhLTGo5Ieu2uzBa6VHh0UlFdGTiw56yOIX5VgI',
     'Mangoli': '1agNRbhpUJRqsA91eDlDq49BKpbW5x3v-2DiAGlbdq9s',
@@ -52,7 +48,6 @@ MASTER_PLTD_ID = '1FsaZyKs3DgJlyZkx5qqpBotNK8Z6C8GOrNeJv3I8AJA'
 MASTER_CIKANDE_ID = '1aZZnnBjSybgzEgUECdLSCaPJ_rMKNHJmfGEwetOARbs'
 DELIVERY_URL = "https://bachmulti-my.sharepoint.com/:x:/g/personal/prabawa_bachgroup_co_id/IQDpLV2xOcHmS51kfDxWqHQAAUHHovDCqOPtICGu3HUp6nc?download=1"
 
-# ======================== PREVENTIVE DETECTION ========================
 PREVENTIVE_TABLE = [
     ("Oil Filter", "LF3325"),
     ("Oil Filter By pass", "LF777"),
@@ -96,7 +91,6 @@ def is_preventive(kode_material, nama_material=""):
         return False
     kode_norm = _norm(kode_material) if kode_material else ""
     nama_norm = _norm(nama_material) if nama_material else ""
-
     if kode_norm:
         for part in re.split(r'\s*/\s*', kode_norm):
             if part in PREVENTIVE_CODES_NORM:
@@ -125,7 +119,6 @@ def is_valid_material(kode, nama):
             return False
     return True
 
-# ======================== GSPREAD CLIENT ========================
 @st.cache_resource
 def get_gspread_client():
     creds = dict(st.secrets["gcp_service_account"])
@@ -133,7 +126,6 @@ def get_gspread_client():
         creds['private_key'] = creds['private_key'].replace('\\n', '\n')
     return gspread.service_account_from_dict(creds)
 
-# ======================== LOADERS ========================
 @st.cache_data(ttl=600)
 def load_stock_all():
     client = get_gspread_client()
@@ -162,7 +154,6 @@ def load_stock_all():
     df = pd.DataFrame(rows, columns=['PLTD', 'Kode Material', 'Nama Material', 'Qty'])
     if not df.empty:
         df['Jenis'] = df.apply(lambda r: 'Preventive' if is_preventive(r['Kode Material'], r['Nama Material']) else 'Corrective', axis=1)
-        # Aggregasi jika ada duplikasi
         df = df.groupby(['PLTD', 'Kode Material', 'Nama Material', 'Jenis'], as_index=False)['Qty'].sum()
     return df
 
@@ -179,8 +170,8 @@ def load_master_data():
                    'Kebutuhan Perbulan Sesuai CF PM':'keb_pm',
                    'Kebutuhan Perbulan Sesuai Aktual FC':'keb_aktual'}
         df1.rename(columns={k:v for k,v in rename1.items() if k in df1.columns}, inplace=True)
-    except:
-        pass
+    except Exception as e:
+        st.warning(f"Gagal membaca Master data 1: {e}")
     try:
         df2 = get_as_dataframe(sh.worksheet('Master data 2'), evaluate_formulas=True)
         df2.columns = df2.columns.str.strip()
@@ -188,17 +179,22 @@ def load_master_data():
         df2.rename(columns={k:v for k,v in rename2.items() if k in df2.columns}, inplace=True)
         if 'durasi_kirim' in df2.columns:
             df2['durasi_kirim'] = pd.to_numeric(df2['durasi_kirim'], errors='coerce').fillna(14)
-    except:
-        pass
+        # Debug: tampilkan kolom yang tersedia
+        st.sidebar.caption(f"Master2 columns: {list(df2.columns)}")
+    except Exception as e:
+        st.warning(f"Gagal membaca Master data 2: {e}")
     return df1, df2
 
 @st.cache_data(ttl=600)
 def load_stok_cikande():
-    """Baca sheet 'Spare Stock' kolom U (Qty) dan lakukan validasi & grouping."""
     client = get_gspread_client()
     try:
         sh = client.open_by_key(MASTER_CIKANDE_ID)
-        ws = sh.worksheet('Spare Stock')
+        try:
+            ws = sh.worksheet('Spare Stock')
+        except WorksheetNotFound:
+            # fallback ke Sheet1
+            ws = sh.worksheet('Sheet1')
         data = ws.get_all_values()
         if len(data) < 2:
             return pd.DataFrame()
@@ -214,14 +210,16 @@ def load_stok_cikande():
                     qty = float(qty_str.replace(',', ''))
                 except:
                     qty = 0.0
-                rows.append({'Kode Material': kode, 'Nama Material': nama, 'Qty Cikande': qty})
+                if qty > 0:  # hanya ambil yang ada stoknya
+                    rows.append({'Kode Material': kode, 'Nama Material': nama, 'Qty Cikande': qty})
         df = pd.DataFrame(rows)
         if not df.empty:
-            # Jika ada duplikasi (seharusnya tidak), jumlahkan
             df = df.groupby(['Kode Material', 'Nama Material'], as_index=False)['Qty Cikande'].sum()
+            # Debug info
+            st.sidebar.caption(f"Cikande loaded: {len(df)} items, total qty: {df['Qty Cikande'].sum()}")
         return df
     except Exception as e:
-        st.warning(f"Gagal membaca stok Cikande: {e}")
+        st.sidebar.warning(f"Cikande error: {e}")
         return pd.DataFrame()
 
 @st.cache_data(ttl=600)
@@ -232,7 +230,6 @@ def load_delivery():
     except:
         return pd.DataFrame()
 
-# ======================== HALAMAN ========================
 def home():
     st.title("⚡ Dashboard Stok & Logistik PLTD")
     df = load_stock_all()
@@ -246,7 +243,6 @@ def home():
     corr_ct = (df['Jenis'] == 'Corrective').sum()
     c3.metric("Preventive / Corrective", f"{prev_ct} / {corr_ct}")
     st.markdown("---")
-    st.info("Gunakan menu sidebar untuk navigasi.")
     pltd_coords = {
         'Pemaron':(-8.16,114.68),'Mangoli':(-1.88,125.37),'Tayan':(-0.03,110.10),
         'Timika':(-4.56,136.89),'Bobong':(-1.95,124.39),'Merawang':(-1.95,105.96),
@@ -266,13 +262,16 @@ def page_stock():
         st.warning("Data belum tersedia.")
         return
 
-    # Gabung stok Cikande (left join untuk memastikan semua material PLTD dapat data Cikande jika ada)
     df_cikande = load_stok_cikande()
     if not df_cikande.empty:
         df = df.merge(df_cikande, on=['Kode Material', 'Nama Material'], how='left')
         df['Qty Cikande'] = df['Qty Cikande'].fillna(0)
+        # Tampilkan total Cikande untuk verifikasi
+        total_cikande = df['Qty Cikande'].sum()
+        st.caption(f"📦 Total Qty Gudang Cikande: {total_cikande:,.1f}")
     else:
         df['Qty Cikande'] = 0.0
+        st.caption("📦 Gudang Cikande: tidak ada data")
 
     st.sidebar.header("Filter Stok")
     pltd_opts = sorted(df['PLTD'].unique())
@@ -298,14 +297,12 @@ def page_stock():
             index=['Kode Material', 'Nama Material'],
             columns='PLTD', values='Qty', aggfunc='sum', fill_value=0
         )
-        # Ambil Qty Cikande dari data (satu material bisa muncul di banyak PLTD, ambil max)
         cikande_agg = data.groupby(['Kode Material', 'Nama Material'])['Qty Cikande'].max()
         pivot = pivot.join(cikande_agg)
         pivot['Total'] = pivot.drop(columns=['Qty Cikande']).sum(axis=1)
         pivot = pivot.reset_index()
         pltd_cols = [c for c in pivot.columns if c not in ('Kode Material', 'Nama Material', 'Qty Cikande', 'Total')]
         pivot = pivot[['Kode Material', 'Nama Material'] + pltd_cols + ['Qty Cikande', 'Total']]
-
         cfg = {
             'Kode Material': st.column_config.TextColumn(pinned=True),
             'Nama Material': st.column_config.TextColumn(pinned=True),
@@ -315,15 +312,22 @@ def page_stock():
     tampil_pivot(prev_df, "Preventive", "blue")
     tampil_pivot(corr_df, "Corrective", "orange")
 
-    # ==================== SISA STOK DALAM BULAN ====================
+    # ==================== SISA STOK DALAM BULAN (PREVENTIVE ONLY) ====================
     st.markdown("---")
-    st.subheader("⏳ Sisa Stok dalam Bulan & Status Kebutuhan")
+    st.subheader("⏳ Sisa Stok dalam Bulan (Material Preventive)")
 
     master1, master2 = load_master_data()
 
-    # Gabungkan dengan Master Data 1 (Kebutuhan Aktual)
-    if master1 is not None and 'pltd' in master1.columns and 'kode_material' in master1.columns:
-        analisis_df = df.merge(
+    # Filter hanya Preventive
+    prev_only = filtered[filtered['Jenis'] == 'Preventive'].copy()
+
+    if prev_only.empty:
+        st.info("Tidak ada material Preventive dengan filter saat ini.")
+        return
+
+    # Gabungkan dengan Master Data 1
+    if master1 is not None and 'pltd' in master1.columns and 'kode_material' in master1.columns and 'keb_aktual' in master1.columns:
+        analisis_df = prev_only.merge(
             master1[['pltd', 'kode_material', 'keb_aktual']],
             left_on=['PLTD', 'Kode Material'],
             right_on=['pltd', 'kode_material'],
@@ -333,50 +337,60 @@ def page_stock():
             if c in analisis_df.columns:
                 analisis_df.drop(columns=[c], inplace=True)
     else:
-        analisis_df = df.copy()
+        analisis_df = prev_only.copy()
         analisis_df['keb_aktual'] = np.nan
 
-    # Gabungkan dengan Master Data 2 (Durasi Kirim)
+    # Gabungkan dengan Master Data 2 (durasi kirim)
     if master2 is not None and 'pltd' in master2.columns and 'durasi_kirim' in master2.columns:
-        analisis_df = analisis_df.merge(master2[['pltd', 'durasi_kirim']], on='PLTD', how='left')
+        analisis_df = analisis_df.merge(master2[['pltd', 'durasi_kirim']], left_on='PLTD', right_on='pltd', how='left')
+        if 'pltd_y' in analisis_df.columns:
+            analisis_df.drop(columns=['pltd_x', 'pltd_y'], errors='ignore', inplace=True)
+        elif 'pltd' in analisis_df.columns and 'PLTD' in analisis_df.columns:
+            # cari kolom pltd yang bukan PLTD asli
+            cols_to_drop = [c for c in analisis_df.columns if c == 'pltd']
+            for c in cols_to_drop:
+                if c != 'PLTD':
+                    analisis_df.drop(columns=[c], inplace=True, errors='ignore')
     else:
-        analisis_df['durasi_kirim'] = np.nan
+        analisis_df['durasi_kirim'] = 14
 
+    # Fallback durasi_kirim
+    if 'durasi_kirim' not in analisis_df.columns:
+        analisis_df['durasi_kirim'] = 14
     analisis_df['durasi_kirim'] = analisis_df['durasi_kirim'].fillna(14)
 
-    # Hitung Sisa Bulan (ROUND(Qty / kebutuhan, 1))
-    analisis_df['Sisa Bulan'] = np.where(
+    # Hitung Sisa Bulan
+    analisis_df['Sisa Bulan (CF Aktual)'] = np.where(
         analisis_df['keb_aktual'].notna() & (analisis_df['keb_aktual'] > 0),
         np.round(analisis_df['Qty'] / analisis_df['keb_aktual'], 1),
         np.nan
     )
 
-    # Tentukan status berdasarkan Lead Time
+    # Status
     analisis_df['Status'] = np.where(
-        analisis_df['Sisa Bulan'].isna(), '⚪ Data Kebutuhan Tidak Tersedia',
+        analisis_df['Sisa Bulan (CF Aktual)'].isna(), '⚪ Data Kebutuhan Tidak Tersedia',
         np.where(
-            analisis_df['Sisa Bulan'] * 30.5 < analisis_df['durasi_kirim'],
+            analisis_df['Sisa Bulan (CF Aktual)'] * 30.5 < analisis_df['durasi_kirim'],
             '🔴 Critical Reorder',
-            np.where(analisis_df['Sisa Bulan'] * 30.5 < 1.5 * analisis_df['durasi_kirim'], '🟡 Warning', '🟢 Aman')
+            np.where(analisis_df['Sisa Bulan (CF Aktual)'] * 30.5 < 1.5 * analisis_df['durasi_kirim'], '🟡 Warning', '🟢 Aman')
         )
     )
 
-    # Tampilkan tabel analisis
-    cols_analisis = ['PLTD', 'Kode Material', 'Nama Material', 'Qty', 'keb_aktual', 'Sisa Bulan', 'durasi_kirim', 'Status']
+    # Tampilkan tabel
+    cols_analisis = ['PLTD', 'Kode Material', 'Nama Material', 'Qty', 'keb_aktual', 'Sisa Bulan (CF Aktual)', 'durasi_kirim', 'Status']
     st.dataframe(
         analisis_df[cols_analisis],
         column_config={
-            'keb_aktual': st.column_config.NumberColumn("Kebutuhan/Bulan"),
-            'Sisa Bulan': st.column_config.NumberColumn("Sisa Stok (Bulan)", format="%.1f Bulan"),
+            'keb_aktual': st.column_config.NumberColumn("Kebutuhan/Bulan (Aktual)"),
+            'Sisa Bulan (CF Aktual)': st.column_config.NumberColumn("Sisa Stok (Bulan)", format="%.1f Bulan"),
             'durasi_kirim': st.column_config.NumberColumn("Durasi Kirim (Hari)")
         },
         use_container_width=True,
         hide_index=True
     )
 
-    # Ringkasan status
     if not analisis_df.empty:
-        st.subheader("Status Penyebaran Kebutuhan")
+        st.subheader("Status Kebutuhan Preventive")
         status_count = analisis_df['Status'].value_counts()
         st.bar_chart(status_count)
 
@@ -392,7 +406,6 @@ def page_transaksi():
     st.title("📊 Transaksi Project")
     st.info("Segera hadir.")
 
-# ======================== NAVIGASI ========================
 home_pg = st.Page(home, title="Beranda", icon="🏠", default=True)
 stock_pg = st.Page(page_stock, title="Stok PLTD", icon="📦")
 analisis_pg = st.Page(page_analisis, title="Analisis Stok", icon="📊")
