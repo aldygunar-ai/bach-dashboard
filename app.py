@@ -1,135 +1,563 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 import requests
 import io
+import plotly.express as px
+import plotly.graph_objects as go
+from datetime import datetime, timedelta
+import gspread
+from gspread_dataframe import get_as_dataframe
+from gspread.exceptions import WorksheetNotFound
+import sys
 
-# --- 1. KONFIGURASI & STYLE ---
-st.set_page_config(page_title="Dashboard Project Bach", layout="wide")
+# ======================== PAGE CONFIG ========================
+st.set_page_config(
+    page_title="Dashboard PLTD Bach",
+    page_icon="⚡",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-TEMA_BIRU = "#0E2F56"
-
-st.markdown(f"""
-    <style>
-    .main {{ background-color: #F8F9FA; }}
-    [data-testid="stSidebar"] {{ background-color: {TEMA_BIRU} !important; }}
-    .sidebar-title {{
+# ======================== CSS Styling ========================
+st.markdown("""
+<style>
+    .main { background-color: #F8F9FA; }
+    [data-testid="stSidebar"] { background-color: #0E2F56 !important; }
+    .sidebar-title {
         color: white; font-size: 20px; font-weight: 800; text-align: center;
         margin-bottom: 25px; padding: 10px; border-bottom: 1px solid #ffffff33;
-    }}
-    [data-testid="stSidebar"] label p {{ color: white !important; font-weight: 500 !important; }}
-    </style>
-    """, unsafe_allow_html=True)
+    }
+    [data-testid="stSidebar"] label p { color: white !important; font-weight: 500 !important; }
+    [data-testid="stSidebar"] button svg, button[kind="headerNoSpacing"] svg { fill: white !important; }
+    div[data-testid="stMetricValue"] { font-size: 28px; font-weight: 800; color: #0E2F56; }
+    .stPlotlyChart { background-color: white; border-radius: 12px; padding: 15px; box-shadow: 0px 4px 12px rgba(0,0,0,0.05); }
+</style>
+""", unsafe_allow_html=True)
 
-# --- 2. DATA HAFALAN PREVENTIVE ---
-LIST_KODE_PREVENTIVE = [
-    'LF3325', 'LF777', '2020PM V30-C', 'FS1006', 'WF2076', '3629140', 
+# ======================== DATA SOURCES ========================
+PLTD_SHEETS = {
+    'Pemaron':        '1HN-X9OhLTGo5Ieu2uzBa6VHh0UlFdGTiw56yOIX5VgI',
+    'Mangoli':        '1agNRbhpUJRqsA91eDlDq49BKpbW5x3v-2DiAGlbdq9s',
+    'Tayan':          '1_FUPGfUWbKFSfYJj4c6rlZDSYDXdL2LOCGG3g6w9vBo',
+    'Timika':         '1SyaYeykle3Fg0FTQzXPzLhkoN60PC9GzygZkrnDY-04',
+    'Bobong':         '1OGeGlQqwO2a4tbL_rS0x5b4guTIiIzVNXySUsbK4GMM',
+    'Merawang':       '1WrNipP179XrvKjNIGjeNSnCz94_6IJQBf4pM-vO5OO8',
+    'Air Anyir':      '10dCcXN574G_xGxsnaq7UmExsA7asbz_HTJPMo6oWN2o',
+    'Padang Manggar': '1u8nurDgXSRLCFB0p9YFv3x7i_8FDU0FZmsQK_yw4W4s',
+    'Krueng Raya':    '1u8nurDgXSRLCFB0p9YFv3x7i_8FDU0FZmsQK_yw4W4s',
+    'Lueng Bata':     '1syFmB3cwN0FfYRBmjgYTshlFiZAXdvVDdcdZ-Xr_p6g',
+    'Ulee Kareng':    '1BlhNGU1L6QJq3W2Qi7Vmp3aOdYNalACKJUwUUecDeoU',
+    'Waena':          '10NKbFUi0SVh1784OQnSU0ULhWzL6_AK7XLY-8EgKbG8',
+    'Sambelia':       '1-8uGvDwZnciEgAXBbogkYWdHQcEClcwuln-hbaR0UAc',
+    'Timika 2':       '17FR17wxkeVgd0_GElV59ugetL8nutqiYwQRyY6FqIVE',
+    'Wamena':         '14ieCIQwEXf4hZ-RsOeLIMyKi5qEJLtQBwTz35b9JXxs',
+}
+
+MASTER_SHEET_ID = '1aZZnnBjSybgzEgUECdLSCaPJ_rMKNHJmfGEwetOARbs'
+SHAREPOINT_DELIVERY_URL = "https://bachmulti-my.sharepoint.com/:x:/g/personal/prabawa_bachgroup_co_id/IQDpLV2xOcHmS51kfDxWqHQAAUHHovDCqOPtICGu3HUp6nc?download=1"
+SHAREPOINT_PROJECT_OPS = SHAREPOINT_DELIVERY_URL
+SHAREPOINT_PROJECT_DAS = "https://bachmulti-my.sharepoint.com/:x:/g/personal/prabawa_bachgroup_co_id/IQBxJHUjgIjQTooUQPRp14iZAUy5KIiRVxLFRW-z8X17lDY?download=1"
+
+PREVENTIVE_CODES = {
+    'LF3325', 'LF777', '2020PM V30-C', 'FS1006', 'WF2076', '3629140',
     'AF872', 'AF25278', 'AHO1135', '5413003', '3015257', '5412990',
     '5PK889', '21-3107', '25471145', '23PK2032', '21-3110', '25477108',
     'RIMULA R4 X 15W-40'
-]
-
-# --- 3. DATABASE LINK ---
-PLTD_IDS = {
-    "Pemaron": "1HN-X9OhLTGo5Ieu2uzBa6VHh0UlFdGTiw56yOIX5VgI",
-    "Mangoli": "1agNRbhpUJRqsA91eDlDq49BKpbW5x3v-2DiAGlbdq9s",
-    "Tayan": "1_FUPGfUWbKFSfYJj4c6rlZDSYDXdL2LOCGG3g6w9vBo",
-    "Timika": "1SyaYeykle3Fg0FTQzXPzLhkoN60PC9GzygZkrnDY-04",
-    "Bobong": "1OGeGlQqwO2a4tbL_rS0x5b4guTIiIzVNXySUsbK4GMM",
-    "Merawang": "1WrNipP179XrvKjNIGjeNSnCz94_6IJQBf4pM-vO5OO8",
-    "Air Anyir": "10dCcXN574G_xGxsnaq7UmExsA7asbz_HTJPMo6oWN2o",
-    "Padang Manggar": "1u8nurDgXSRLCFB0p9YFv3x7i_8FDU0FZmsQK_yw4W4s",
-    "Krueng Raya": "1u8nurDgXSRLCFB0p9YFv3x7i_8FDU0FZmsQK_yw4W4s",
-    "Lueng Bata": "1syFmB3cwN0FfYRBmjgYTshlFiZAXdvVDdcdZ-Xr_p6g",
-    "Ulee Kareng": "1BlhNGU1L6QJq3W2Qi7Vmp3aOdYNalACKJUwUUecDeoU"
 }
 
-# --- 4. HELPER FUNCTIONS ---
+PLTD_COORDS = {
+    'Pemaron': (-8.1647, 114.6824), 'Mangoli': (-1.8821, 125.3732),
+    'Tayan': (-0.0324, 110.1022), 'Timika': (-4.5564, 136.8883),
+    'Bobong': (-1.946, 124.388), 'Merawang': (-1.9508, 105.9643),
+    'Air Anyir': (-1.9377, 106.1064), 'Padang Manggar': (-2.1429, 106.1419),
+    'Krueng Raya': (5.6023, 95.5336), 'Lueng Bata': (5.5484, 95.3342),
+    'Ulee Kareng': (5.5475, 95.3322), 'Waena': (-2.6062, 140.5637),
+    'Sambelia': (-8.3973, 116.6729), 'Timika 2': (-4.5564, 136.8883),
+    'Wamena': (-4.0922, 138.9447)
+}
+
+DURASI_KIRIM = {
+    'Pemaron': 7, 'Mangoli': 14, 'Tayan': 10, 'Timika': 14,
+    'Bobong': 14, 'Merawang': 5, 'Air Anyir': 5, 'Padang Manggar': 5,
+    'Krueng Raya': 7, 'Lueng Bata': 7, 'Ulee Kareng': 7, 'Waena': 14,
+    'Sambelia': 7, 'Timika 2': 14, 'Wamena': 21
+}
+
+PM_INTERVAL = {
+    'LF3325': 400, 'LF777': 500, '2020PM V30-C': 400, 'FS1006': 500,
+    'WF2076': 500, '3629140': 400, 'AF872': 400, 'AF25278': 400,
+    'AHO1135': 500, '5413003': 500, '3015257': 500, '5412990': 500,
+    '5PK889': 500, '21-3107': 500, '25471145': 500, '23PK2032': 500,
+    '21-3110': 500, '25477108': 500, 'RIMULA R4 X 15W-40': 750
+}
+DEFAULT_PM_INTERVAL = 500
+
+# ======================== HELPER: GSPREAD CLIENT ========================
+@st.cache_resource
+def get_gspread_client():
+    credentials = st.secrets["gcp_service_account"]
+    return gspread.service_account_from_dict(credentials)
+
+# ======================== DATA LOADER FUNCTIONS ========================
 @st.cache_data(ttl=600)
-def load_gsheet_data(sheet_id):
-    if not sheet_id: return pd.DataFrame()
-    url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv"
+def load_stock_per_pltd():
+    client = get_gspread_client()
+    all_data = []
+    for pltd, sheet_id in PLTD_SHEETS.items():
+        try:
+            sh = client.open_by_key(sheet_id)
+            ws = sh.sheet1
+            data = ws.get_all_values()
+            if not data or len(data) < 2:
+                continue
+            for row in data[1:]:
+                if len(row) < 9:
+                    continue
+                kode = row[1].strip() if len(row) > 1 else ''
+                nama = row[2].strip() if len(row) > 2 else ''
+                tipe = row[3].strip() if len(row) > 3 else ''
+                qty_str = row[8] if len(row) > 8 else '0'
+                try:
+                    qty = float(qty_str.replace(',', ''))
+                except:
+                    qty = 0.0
+                if kode or nama:
+                    all_data.append({
+                        'PLTD': pltd,
+                        'Kode Material': kode,
+                        'Nama Material': nama,
+                        'Type Material': tipe,
+                        'Qty': qty
+                    })
+        except Exception as e:
+            st.warning(f"Gagal baca {pltd}: {e}")
+    df = pd.DataFrame(all_data)
+    if not df.empty:
+        df['Jenis'] = df['Kode Material'].apply(lambda x: 'Preventive' if x in PREVENTIVE_CODES else 'Corrective')
+    return df
+
+@st.cache_data(ttl=600)
+def load_master_sheets():
+    client = get_gspread_client()
+    sh = client.open_by_key(MASTER_SHEET_ID)
+    result = {}
     try:
-        df = pd.read_csv(url)
-        return df
+        ws = sh.worksheet('Gabungan')
+        result['pemakaian'] = get_as_dataframe(ws, evaluate_formulas=True)
+    except WorksheetNotFound:
+        result['pemakaian'] = pd.DataFrame()
+    try:
+        ws = sh.worksheet('Sheet1')
+        result['stok_cikande'] = get_as_dataframe(ws, evaluate_formulas=True)
     except:
+        result['stok_cikande'] = pd.DataFrame()
+    try:
+        ws = sh.worksheet('DARI TARIKAN')
+        result['harga'] = get_as_dataframe(ws, evaluate_formulas=True)
+    except:
+        result['harga'] = pd.DataFrame()
+    return result
+
+@st.cache_data(ttl=600)
+def load_delivery_data():
+    headers = {'User-Agent': 'Mozilla/5.0'}
+    try:
+        resp = requests.get(SHAREPOINT_DELIVERY_URL, headers=headers, timeout=20)
+        df = pd.read_excel(io.BytesIO(resp.content))
+        return df
+    except Exception as e:
+        st.error(f"Gagal memuat data pengiriman: {e}")
         return pd.DataFrame()
 
-# --- 5. SIDEBAR ---
-with st.sidebar:
-    st.markdown('<div class="sidebar-title">PT BACH MULTI GLOBAL</div>', unsafe_allow_html=True)
-    page = st.radio("Menu Dashboard", ["Page 1: Menu Utama", "Page 2: Stock Aktual"])
-    st.divider()
-    sel_pltd = st.multiselect("Pilih Nama PLTD", options=list(PLTD_IDS.keys()))
+@st.cache_data(ttl=600)
+def load_project_data():
+    headers = {'User-Agent': 'Mozilla/5.0'}
+    df_ops, df_das = pd.DataFrame(), pd.DataFrame()
+    try:
+        res_ops = requests.get(SHAREPOINT_PROJECT_OPS, headers=headers, timeout=20)
+        df_ops = pd.read_excel(io.BytesIO(res_ops.content))
+        df_ops['PROJECT'] = 'PROJECT PLTD'
+    except: pass
+    try:
+        res_das = requests.get(SHAREPOINT_PROJECT_DAS, headers=headers, timeout=20)
+        df_das = pd.read_excel(io.BytesIO(res_das.content))
+        df_das['PROJECT'] = 'PROJECT DAS'
+    except: pass
+    df = pd.concat([df_ops, df_das], ignore_index=True)
+    if not df.empty and 'TANGGAL' in df.columns:
+        df['TANGGAL'] = pd.to_datetime(df['TANGGAL'], errors='coerce')
+        df = df.dropna(subset=['TANGGAL'])
+        df['Tahun'] = df['TANGGAL'].dt.year.astype(str)
+        df['Bulan'] = df['TANGGAL'].dt.strftime('%B')
+        df['Tgl_Str'] = df['TANGGAL'].dt.strftime('%Y-%m-%d')
+    return df
 
-# --- 6. LOGIKA HALAMAN ---
+def get_duration(pltd):
+    return DURASI_KIRIM.get(pltd, 14)
 
-if page == "Page 1: Menu Utama":
-    st.title("🚛 Dashboard Project Bach")
-    st.info("Pilih PLTD di sidebar untuk melihat perbandingan stok.")
+def get_pm_interval(kode):
+    return PM_INTERVAL.get(str(kode).strip(), DEFAULT_PM_INTERVAL)
 
-elif page == "Page 2: Stock Aktual":
-    st.title("📦 Perbandingan Stock Aktual (Normalized)")
-    
-    if not sel_pltd:
-        st.info("👋 Silakan pilih PLTD di sidebar.")
-    else:
-        all_dfs = []
-        for site in sel_pltd:
-            df = load_gsheet_data(PLTD_IDS.get(site))
-            if not df.empty:
-                try:
-                    # Ambil A=0(Kode), C=2(Nama), D=3(Type), I=8(Qty)
-                    df_sub = df.iloc[:, [0, 2, 3, 8]].copy()
-                    df_sub.columns = ['KODE', 'NAMA MATERIAL', 'TYPE MATERIAL', 'QTY']
-                    
-                    # --- NORMALISASI DATA (KUNCI AGAR TIDAK BERANTAKAN) ---
-                    df_sub['KODE'] = df_sub['KODE'].astype(str).str.strip().str.upper()
-                    df_sub['NAMA MATERIAL'] = df_sub['NAMA MATERIAL'].astype(str).str.strip().str.upper()
-                    df_sub['TYPE MATERIAL'] = df_sub['TYPE MATERIAL'].astype(str).str.strip().str.upper()
-                    df_sub['QTY'] = pd.to_numeric(df_sub['QTY'], errors='coerce').fillna(0)
-                    
-                    # Klasifikasi Berdasarkan Hafalan
-                    def classify_logic(row):
-                        kode_val = str(row['KODE'])
-                        if not kode_val or kode_val == 'NAN' or kode_val == '':
-                            return 'CORRECTIVE'
-                        if any(p.upper() in kode_val for p in LIST_KODE_PREVENTIVE):
-                            return 'PREVENTIVE'
-                        return 'CORRECTIVE'
-                    
-                    df_sub['KATEGORI'] = df_sub.apply(classify_logic, axis=1)
-                    df_sub['PLTD'] = site.upper()
-                    all_dfs.append(df_sub)
-                except:
-                    st.error(f"Gagal memproses kolom di {site}.")
+# ======================== PAGE 1: HOME ========================
+def home():
+    st.title("⚡ Dashboard Monitoring Stok & Logistik PLTD")
+    st.markdown("Ringkasan Cepat & Navigasi")
 
-        if all_dfs:
-            df_final = pd.concat(all_dfs, ignore_index=True)
-            
-            # Pivot Table: Menggabungkan data yang Nama & Type-nya sama
-            df_pivot = df_final.pivot_table(
-                index=['KODE', 'NAMA MATERIAL', 'TYPE MATERIAL', 'KATEGORI'],
-                columns='PLTD',
-                values='QTY',
-                aggfunc='sum'
-            ).reset_index().fillna(0)
+    df_stock = load_stock_per_pltd()
+    master = load_master_sheets()
+    df_deliv = load_delivery_data()
 
-            # Bagian Tabel PM
-            st.subheader("🛠️ KELOMPOK: PREVENTIVE MAINTENANCE")
-            df_p = df_pivot[df_pivot['KATEGORI'] == 'PREVENTIVE'].drop(columns=['KATEGORI', 'KODE'])
-            if not df_p.empty:
-                st.dataframe(df_p, use_container_width=True, hide_index=True)
-            else:
-                st.write("Tidak ada data Preventive.")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Total PLTD", len(df_stock['PLTD'].unique()) if not df_stock.empty else 0)
+    with col2:
+        total_qty = df_stock['Qty'].sum() if not df_stock.empty else 0
+        st.metric("Total Stok (unit)", f"{total_qty:,.0f}")
+    with col3:
+        # Placeholder for critical count
+        st.metric("Material Kritis", "Lihat Analisis Stok")
 
-            st.markdown("---")
+    st.markdown("---")
+    st.subheader("Navigasi Cepat")
+    cols = st.columns(4)
+    with cols[0]:
+        if st.button("📦 Stok PLTD", use_container_width=True):
+            st.switch_page("pages/stock_pltd")
+    with cols[1]:
+        if st.button("📊 Analisis Stok", use_container_width=True):
+            st.switch_page("pages/analisis_stok")
+    with cols[2]:
+        if st.button("🔥 Pemakaian", use_container_width=True):
+            st.switch_page("pages/pemakaian")
+    with cols[3]:
+        if st.button("🚚 Transaksi Project", use_container_width=True):
+            st.switch_page("pages/transaksi_project")
 
-            # Bagian Tabel CM
-            st.subheader("🆘 KELOMPOK: CORRECTIVE MAINTENANCE")
-            df_c = df_pivot[df_pivot['KATEGORI'] == 'CORRECTIVE'].drop(columns=['KATEGORI', 'KODE'])
-            if not df_c.empty:
-                st.dataframe(df_c, use_container_width=True, hide_index=True)
-            else:
-                st.write("Tidak ada data Corrective.")
+    st.markdown("---")
+    if not df_stock.empty:
+        coords = df_stock[['PLTD']].drop_duplicates()
+        coords['lat'] = coords['PLTD'].apply(lambda x: PLTD_COORDS.get(x, (None, None))[0])
+        coords['lon'] = coords['PLTD'].apply(lambda x: PLTD_COORDS.get(x, (None, None))[1])
+        valid = coords.dropna(subset=['lat'])
+        if not valid.empty:
+            st.map(valid, latitude='lat', longitude='lon', zoom=4)
+
+# ======================== PAGE 2: STOK PLTD ========================
+def stock_pltd():
+    st.title("📦 Stock Material PLTD Aktual")
+
+    df_stock = load_stock_per_pltd()
+    master = load_master_sheets()
+    df_cikande = master['stok_cikande']
+    df_deliv = load_delivery_data()
+
+    # Sidebar filter
+    st.sidebar.header("Filter Stok PLTD")
+    pltd_list = sorted(df_stock['PLTD'].unique()) if not df_stock.empty else []
+    selected_pltd = st.sidebar.multiselect("PLTD", pltd_list, default=pltd_list)
+    kode_list = sorted(df_stock['Kode Material'].unique())
+    selected_kode = st.sidebar.multiselect("Kode Material", kode_list, default=kode_list)
+    jenis_list = ['Preventive', 'Corrective']
+    selected_jenis = st.sidebar.multiselect("Jenis Material", jenis_list, default=jenis_list)
+
+    # Filter
+    df = df_stock.copy()
+    if selected_pltd: df = df[df['PLTD'].isin(selected_pltd)]
+    if selected_kode: df = df[df['Kode Material'].isin(selected_kode)]
+    if selected_jenis: df = df[df['Jenis'].isin(selected_jenis)]
+
+    st.subheader("🔹 Stok Aktual per PLTD")
+    st.dataframe(df[['PLTD', 'Kode Material', 'Nama Material', 'Type Material', 'Qty', 'Jenis']],
+                 use_container_width=True, hide_index=True)
+
+    # In-Transit categorization
+    st.subheader("🚚 Status Pengiriman (In-Transit)")
+    if not df_deliv.empty:
+        # Try to classify based on existing STATUS column
+        if 'STATUS' in df_deliv.columns:
+            status_map = {
+                'IN TRANSIT': 'Proses Kirim',
+                'SHIPPED': 'Proses Kirim',
+                'ON DELIVERY': 'Proses Kirim',
+                'PO': 'Proses Import/Pembelian',
+                'PROCUREMENT': 'Proses Import/Pembelian',
+                'PURCHASE': 'Proses Import/Pembelian',
+            }
+            df_deliv['Kategori Pengiriman'] = df_deliv['STATUS'].map(status_map).fillna('Lainnya')
         else:
-            st.warning("Data tidak tersedia.")
+            df_deliv['Kategori Pengiriman'] = 'Proses Kirim'
+            st.info("Kolom 'STATUS' tidak ditemukan, semua dianggap Proses Kirim.")
+        kat_list = df_deliv['Kategori Pengiriman'].unique()
+        selected_kat = st.multiselect("Kategori Pengiriman", kat_list, default=kat_list)
+        df_deliv_f = df_deliv[df_deliv['Kategori Pengiriman'].isin(selected_kat)]
+        st.dataframe(df_deliv_f, use_container_width=True, hide_index=True)
+    else:
+        st.warning("Data pengiriman tidak tersedia.")
+
+    st.subheader("🏢 Stok Gudang Cikande")
+    if not df_cikande.empty:
+        st.dataframe(df_cikande, use_container_width=True, hide_index=True)
+    else:
+        st.info("Data gudang Cikande tidak ditemukan.")
+
+# ======================== PAGE 3: ANALISIS STOK ========================
+def analisis_stok():
+    st.title("📊 Analisis Stok & Kebutuhan Material")
+
+    df_stock = load_stock_per_pltd()
+    master = load_master_sheets()
+    df_harga = master['harga']
+    df_pemakaian = master['pemakaian']
+
+    # Asumsi jam operasi
+    stro = st.sidebar.number_input("Jam Operasi/hari", min_value=1, max_value=24, value=24)
+    hari_per_bulan = 30.5
+    jam_per_bulan = hari_per_bulan * stro
+
+    # Gabung harga
+    if not df_harga.empty and 'Kode Material' in df_harga.columns and 'Harga Satuan' in df_harga.columns:
+        df_stock = df_stock.merge(df_harga[['Kode Material', 'Harga Satuan']], on='Kode Material', how='left')
+    else:
+        df_stock['Harga Satuan'] = np.nan
+
+    # Kebutuhan PM
+    df_stock['Interval PM (jam)'] = df_stock['Kode Material'].apply(get_pm_interval)
+    df_stock['Kebutuhan/bin (PM)'] = np.ceil(jam_per_bulan / df_stock['Interval PM (jam)'])
+
+    # Kebutuhan Aktual dari pemakaian
+    if not df_pemakaian.empty and 'PLTD' in df_pemakaian.columns and 'Kode Material' in df_pemakaian.columns and 'Qty' in df_pemakaian.columns:
+        df_pemakaian['Tanggal'] = pd.to_datetime(df_pemakaian.iloc[:, 0], errors='coerce')
+        cutoff = pd.Timestamp.now() - pd.DateOffset(months=6)
+        recent = df_pemakaian[df_pemakaian['Tanggal'] >= cutoff]
+        konsumsi = recent.groupby(['PLTD', 'Kode Material'])['Qty'].sum() / 6
+        konsumsi = konsumsi.reset_index(name='Kebutuhan/bin (Aktual)')
+        df_stock = df_stock.merge(konsumsi, on=['PLTD', 'Kode Material'], how='left')
+        df_stock['Kebutuhan/bin (Aktual)'] = df_stock['Kebutuhan/bin (Aktual)'].fillna(0)
+    else:
+        df_stock['Kebutuhan/bin (Aktual)'] = 0
+
+    df_stock['Kebutuhan/bin (Efektif)'] = np.where(df_stock['Kebutuhan/bin (Aktual)'] > 0,
+                                                   df_stock['Kebutuhan/bin (Aktual)'],
+                                                   df_stock['Kebutuhan/bin (PM)'])
+    df_stock['Kebutuhan/hari'] = df_stock['Kebutuhan/bin (Efektif)'] / hari_per_bulan
+    df_stock['Durasi Kirim (hari)'] = df_stock['PLTD'].apply(get_duration)
+    df_stock['Sisa Hari Stok'] = np.where(df_stock['Kebutuhan/hari'] > 0,
+                                          df_stock['Qty'] / df_stock['Kebutuhan/hari'], 9999)
+    df_stock['Status'] = df_stock.apply(
+        lambda r: '🔴 Critical Reorder' if r['Sisa Hari Stok'] < r['Durasi Kirim (hari)']
+        else ('🟡 Warning' if r['Sisa Hari Stok'] < 1.5 * r['Durasi Kirim (hari)'] else '🟢 Aman'),
+        axis=1
+    )
+    df_stock['Propose Kirim'] = np.ceil(np.maximum(0, (df_stock['Kebutuhan/hari'] * df_stock['Durasi Kirim (hari)']) - df_stock['Qty']))
+
+    # Filter
+    st.sidebar.header("Filter Analisis")
+    pltd_filter = st.sidebar.multiselect("PLTD", sorted(df_stock['PLTD'].unique()), default=sorted(df_stock['PLTD'].unique()))
+    jenis_filter = st.sidebar.multiselect("Jenis", ['Preventive', 'Corrective'], default=['Preventive', 'Corrective'])
+    status_filter = st.sidebar.multiselect("Status", ['🔴 Critical Reorder', '🟡 Warning', '🟢 Aman'],
+                                         default=['🔴 Critical Reorder', '🟡 Warning', '🟢 Aman'])
+
+    df_view = df_stock.copy()
+    if pltd_filter: df_view = df_view[df_view['PLTD'].isin(pltd_filter)]
+    if jenis_filter: df_view = df_view[df_view['Jenis'].isin(jenis_filter)]
+    if status_filter: df_view = df_view[df_view['Status'].isin(status_filter)]
+
+    st.subheader("📋 Tabel Kebutuhan & Lead Time")
+    cols_show = ['PLTD', 'Kode Material', 'Nama Material', 'Jenis', 'Qty',
+                 'Kebutuhan/bin (PM)', 'Kebutuhan/bin (Aktual)',
+                 'Sisa Hari Stok', 'Durasi Kirim (hari)', 'Status', 'Propose Kirim']
+    if 'Harga Satuan' in df_view.columns:
+        cols_show.append('Harga Satuan')
+    st.dataframe(df_view[cols_show], use_container_width=True, hide_index=True)
+
+    # Visual
+    st.subheader("⏳ Lead Time Alert Chart")
+    alert_counts = df_view['Status'].value_counts()
+    st.bar_chart(alert_counts)
+
+    # Timeline contoh
+    st.subheader("📅 Timeline Material PM Tertentu")
+    if not df_view[df_view['Jenis'] == 'Preventive'].empty:
+        mat = st.selectbox("Pilih Material Preventive", df_view[df_view['Jenis'] == 'Preventive']['Nama Material'].unique())
+        if mat:
+            row = df_view[df_view['Nama Material'] == mat].iloc[0]
+            st.metric("Sisa Hari Stok", f"{row['Sisa Hari Stok']:.0f}")
+            st.progress(min(row['Sisa Hari Stok']/row['Durasi Kirim (hari)'], 1.0))
+
+# ======================== PAGE 4: PEMAKAIAN ========================
+def pemakaian():
+    st.title("🔥 Pemakaian Material & Peta Sebaran")
+
+    master = load_master_sheets()
+    df_pemakaian = master['pemakaian']
+    if df_pemakaian.empty:
+        st.warning("Data pemakaian tidak tersedia.")
+        return
+
+    # Standardize columns (simple approach)
+    df = df_pemakaian.copy()
+    # rename if necessary (this example assumes columns: Tanggal, PLTD, Kode Material, Nama Material, Qty, Biaya, No Transaksi)
+    # We'll try to map common names
+    col_map = {}
+    for col in df.columns:
+        col_l = col.lower()
+        if 'tanggal' in col_l: col_map['Tanggal'] = col
+        elif 'pltd' in col_l or 'site' in col_l: col_map['PLTD'] = col
+        elif 'kode' in col_l and 'material' in col_l: col_map['Kode Material'] = col
+        elif 'nama' in col_l and 'material' in col_l: col_map['Nama Material'] = col
+        elif 'qty' in col_l or 'quantity' in col_l: col_map['Qty'] = col
+        elif 'biaya' in col_l or 'total' in col_l or 'cost' in col_l: col_map['Biaya'] = col
+        elif 'transaksi' in col_l or 'doc' in col_l or 'no' in col_l: col_map['No Transaksi'] = col
+    if 'Tanggal' not in col_map:
+        st.error("Kolom Tanggal tidak ditemukan.")
+        return
+    df['Tanggal'] = pd.to_datetime(df[col_map['Tanggal']], errors='coerce')
+    df['PLTD'] = df[col_map['PLTD']] if 'PLTD' in col_map else 'Tidak Diketahui'
+    df['Kode Material'] = df[col_map['Kode Material']] if 'Kode Material' in col_map else '-'
+    df['Nama Material'] = df[col_map['Nama Material']] if 'Nama Material' in col_map else '-'
+    df['Qty'] = pd.to_numeric(df[col_map['Qty']], errors='coerce').fillna(0)
+    df['Biaya'] = pd.to_numeric(df[col_map['Biaya']], errors='coerce').fillna(0) if 'Biaya' in col_map else 0
+    df['No Transaksi'] = df[col_map['No Transaksi']].astype(str) if 'No Transaksi' in col_map else ''
+    df['Consume Status'] = df['No Transaksi'].apply(lambda x: 'Need Consume' if x in ['', 'nan', 'None'] else 'Consumed')
+
+    # Sidebar filters
+    st.sidebar.header("Filter Pemakaian")
+    pltd_opt = sorted(df['PLTD'].unique())
+    sel_pltd = st.sidebar.multiselect("PLTD", pltd_opt, default=pltd_opt)
+    kode_opt = sorted(df['Kode Material'].unique())
+    sel_kode = st.sidebar.multiselect("Kode Material", kode_opt, default=kode_opt)
+    jenis_opt = ['Preventive', 'Corrective']
+    sel_jenis = st.sidebar.multiselect("Jenis", jenis_opt, default=jenis_opt)
+    consume_opt = ['Consumed', 'Need Consume']
+    sel_consume = st.sidebar.multiselect("Status Consume", consume_opt, default=consume_opt)
+
+    # Apply filters
+    df_f = df.copy()
+    if sel_pltd: df_f = df_f[df_f['PLTD'].isin(sel_pltd)]
+    if sel_kode: df_f = df_f[df_f['Kode Material'].isin(sel_kode)]
+    if sel_consume: df_f = df_f[df_f['Consume Status'].isin(sel_consume)]
+    # jenis filter needs merging with stock to get Jenis
+    if sel_jenis:
+        df_stock = load_stock_per_pltd()
+        type_map = df_stock[['Kode Material', 'Jenis']].drop_duplicates()
+        df_f = df_f.merge(type_map, on='Kode Material', how='left')
+        df_f = df_f[df_f['Jenis'].isin(sel_jenis)]
+
+    # KPIs
+    kpi1, kpi2, kpi3 = st.columns(3)
+    kpi1.metric("Total Qty", f"{df_f['Qty'].sum():,.0f}")
+    kpi2.metric("Total Biaya", f"Rp {df_f['Biaya'].sum():,.0f}")
+    kpi3.metric("Need Consume", len(df_f[df_f['Consume Status'] == 'Need Consume']))
+
+    # Top 10
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("🔝 Top 10 Material by Qty")
+        top_mat = df_f.groupby('Nama Material')['Qty'].sum().nlargest(10)
+        st.bar_chart(top_mat)
+    with col2:
+        st.subheader("🏢 Top 10 Site by Qty")
+        top_site = df_f.groupby('PLTD')['Qty'].sum().nlargest(10)
+        st.bar_chart(top_site)
+
+    st.subheader("⚠️ Need Consume Detail")
+    need = df_f[df_f['Consume Status'] == 'Need Consume']
+    st.dataframe(need[['Tanggal', 'PLTD', 'Kode Material', 'Nama Material', 'Qty', 'No Transaksi']],
+                 use_container_width=True, hide_index=True)
+
+    # Map with status (using stock data for criticality)
+    st.subheader("📍 Peta Sebaran PLTD & Status Stok")
+    df_stock = load_stock_per_pltd()
+    if not df_stock.empty:
+        stock_agg = df_stock.groupby('PLTD')['Qty'].sum().reset_index()
+        stock_agg['Status'] = stock_agg['Qty'].apply(lambda x: '🟢 Aman' if x >= 10 else '🔴 Kritis')
+        stock_agg['lat'] = stock_agg['PLTD'].apply(lambda x: PLTD_COORDS.get(x, (None, None))[0])
+        stock_agg['lon'] = stock_agg['PLTD'].apply(lambda x: PLTD_COORDS.get(x, (None, None))[1])
+        stock_agg = stock_agg.dropna(subset=['lat'])
+        color_map = {'🟢 Aman': 'green', '🔴 Kritis': 'red'}
+        fig = px.scatter_mapbox(stock_agg, lat='lat', lon='lon', color='Status',
+                                color_discrete_map=color_map,
+                                hover_name='PLTD', hover_data=['Qty'],
+                                zoom=4, height=500)
+        fig.update_layout(mapbox_style="open-street-map")
+        st.plotly_chart(fig, use_container_width=True)
+
+# ======================== PAGE 5: TRANSAKSI PROJECT ========================
+def transaksi_project():
+    df_raw = load_project_data()
+    if df_raw.empty:
+        st.warning("Data proyek tidak tersedia.")
+        return
+
+    if 'reset_counter' not in st.session_state:
+        st.session_state.reset_counter = 0
+
+    def do_reset():
+        st.session_state.reset_counter += 1
+
+    with st.sidebar:
+        st.markdown('<div class="sidebar-title">PT BACH MULTI GLOBAL</div>', unsafe_allow_html=True)
+        c = st.session_state.reset_counter
+        sel_proj = st.multiselect("Project", df_raw['PROJECT'].unique(), default=[], key=f'p_{c}')
+        sel_year = st.multiselect("Tahun", sorted(df_raw['Tahun'].unique(), reverse=True), default=[], key=f'y_{c}')
+        sel_month = st.multiselect("Bulan", df_raw['Bulan'].unique(), key=f'm_{c}')
+        sel_stat = st.multiselect("Status", sorted(df_raw['STATUS'].unique()), key=f's_{c}')
+        sel_site = st.multiselect("Site (WH Tujuan)", sorted(df_raw['WH TUJUAN'].dropna().unique()), key=f'st_{c}')
+        st.divider()
+        st.button("🔄 Clear All Filters", on_click=do_reset, use_container_width=True)
+
+    df_f = df_raw.copy()
+    if sel_proj: df_f = df_f[df_f['PROJECT'].isin(sel_proj)]
+    if sel_year: df_f = df_f[df_f['Tahun'].isin(sel_year)]
+    if sel_month: df_f = df_f[df_f['Bulan'].isin(sel_month)]
+    if sel_stat: df_f = df_f[df_f['STATUS'].isin(sel_stat)]
+    if sel_site: df_f = df_f[df_f['WH TUJUAN'].isin(sel_site)]
+
+    st.title("📊 Dashboard Project Bach")
+    if not (sel_proj or sel_year or sel_month or sel_stat or sel_site):
+        st.info("👋 Silakan pilih filter di samping kiri untuk menampilkan data.")
+    else:
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Total Order", len(df_f))
+        m2.metric("Total Qty", f"{int(df_f['QTY'].sum()):,}")
+        m3.metric("Total Biaya", f"Rp {df_f['TOTAL COST'].sum():,.0f}")
+        m4.metric("Site Aktif", df_f['WH TUJUAN'].nunique())
+
+        st.markdown("---")
+        st.subheader("📈 Tren Permintaan Harian")
+        trend_data = df_f.groupby('Tgl_Str').size().reset_index(name='Requests')
+        fig_tr = px.line(trend_data, x='Tgl_Str', y='Requests', markers=True, text='Requests')
+        st.plotly_chart(fig_tr, use_container_width=True)
+
+        st.markdown("---")
+        c1, c2 = st.columns(2)
+        with c1:
+            st.subheader("🏢 Top Site Request (QTY)")
+            top_site = df_f.groupby('WH TUJUAN')['QTY'].sum().nlargest(8)
+            st.bar_chart(top_site)
+        with c2:
+            st.subheader("🔝 Top Requested Items")
+            top_item = df_f.groupby('ITEM NAME')['QTY'].sum().nlargest(8)
+            st.bar_chart(top_item)
+
+        st.markdown("---")
+        st.subheader("⚠️ Highlight Outstanding")
+        df_out = df_f[~df_f['STATUS'].isin(['DELIVERED', 'CANCEL'])]
+        st.dataframe(df_out[['TANGGAL', 'PROJECT', 'WH TUJUAN', 'ITEM NAME', 'QTY', 'STATUS']],
+                     use_container_width=True, hide_index=True)
+
+        st.subheader("📋 Detail Movement Record")
+        st.dataframe(df_f[['TANGGAL', 'PROJECT', 'WH TUJUAN', 'ITEM NAME', 'QTY', 'TOTAL COST', 'STATUS']],
+                     use_container_width=True, hide_index=True)
+
+# ======================== BUILD NAVIGATION ========================
+# Register pages
+home_pg = st.Page(home, title="Beranda", icon="🏠", default=True)
+stock_pg = st.Page(stock_pltd, title="Stok PLTD", icon="📦")
+analisis_pg = st.Page(analisis_stok, title="Analisis Stok", icon="📊")
+pemakaian_pg = st.Page(pemakaian, title="Pemakaian", icon="🔥")
+transaksi_pg = st.Page(transaksi_project, title="Transaksi Project", icon="🚚")
+
+pg = st.navigation([home_pg, stock_pg, analisis_pg, pemakaian_pg, transaksi_pg])
+pg.run()
