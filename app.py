@@ -110,24 +110,20 @@ def get_gspread_client():
         creds['private_key'] = pk.replace('\\n', '\n')
     return gspread.service_account_from_dict(creds)
 
-# ======================== RETRY HELPER ========================
+# ======================== RETRY ========================
 def retry_gspread(func, *args, max_retries=3, **kwargs):
-    """Retry logic untuk menangani rate limit."""
     for attempt in range(max_retries):
         try:
             return func(*args, **kwargs)
         except APIError as e:
             if '429' in str(e) and attempt < max_retries - 1:
-                wait = 2 ** attempt
-                st.warning(f"Rate limit, tunggu {wait} detik...")
-                time.sleep(wait)
+                time.sleep(2 ** attempt)
             else:
                 raise
 
-# ======================== LOADERS (DIGABUNG) ========================
-@st.cache_data(ttl=3600)  # cache 1 jam
+# ======================== LOAD ALL ========================
+@st.cache_data(ttl=1800)
 def load_all_data():
-    """Gabungkan semua load data dalam satu fungsi untuk menghindari rate limit."""
     client = get_gspread_client()
     result = {'stock': pd.DataFrame(), 'master1': None, 'master2': None, 'cikande': pd.DataFrame(), 'delivery': pd.DataFrame()}
 
@@ -169,15 +165,22 @@ def load_all_data():
         try:
             df2 = get_as_dataframe(sh.worksheet('Master data 2'), evaluate_formulas=True)
             df2.columns = df2.columns.str.strip()
-            rename2 = {'Nama PLTD':'pltd','Durasi Kirim Darat+Laut (Hari)':'durasi_kirim'}
-            df2.rename(columns={k:v for k,v in rename2.items() if k in df2.columns}, inplace=True)
+            # Cari kolom yang mengandung 'PLTD' dan 'Durasi Kirim'
+            pltd_col = next((c for c in df2.columns if 'pltd' in c.lower()), None)
+            durasi_col = next((c for c in df2.columns if 'durasi kirim' in c.lower() and 'darat' in c.lower()), None)
+            if pltd_col:
+                df2.rename(columns={pltd_col: 'pltd'}, inplace=True)
+            if durasi_col:
+                df2.rename(columns={durasi_col: 'durasi_kirim'}, inplace=True)
             if 'durasi_kirim' in df2.columns:
                 df2['durasi_kirim'] = pd.to_numeric(df2['durasi_kirim'], errors='coerce').fillna(14)
             result['master2'] = df2
-        except: pass
-    except: pass
+        except Exception as e:
+            st.warning(f"Master2 error: {e}")
+    except Exception as e:
+        st.warning(f"Master sheet error: {e}")
 
-    # 3. Cikande
+    # 3. Cikande (KOLOM C = Qty)
     try:
         sh = retry_gspread(client.open_by_key, MASTER_D365_ID)
         ws = sh.worksheet('Sheet1')
@@ -185,12 +188,16 @@ def load_all_data():
         if len(data) >= 2:
             cik_rows = []
             for r in data[1:]:
-                if len(r) <= 20: continue
+                if len(r) < 3: continue
                 kode = r[1].strip() if len(r) > 1 else ''
                 nama = r[2].strip() if len(r) > 2 else ''
-                qty_s = r[20].strip() if len(r) > 20 else '0'
+                qty_s = r[2].strip() if len(r) > 2 else '0'  # Kolom C = index 2
+                # Coba parse qty dari kolom C
+                try:
+                    qty = float(qty_s.replace(',', '')) if qty_s else 0.0
+                except:
+                    qty = 0.0
                 if not is_valid_material(kode, nama): continue
-                qty = float(qty_s.replace(',', '')) if qty_s else 0.0
                 cik_rows.append({'Kode Material': kode, 'Nama Material': nama, 'Qty Cikande': qty})
             df_cik = pd.DataFrame(cik_rows)
             if not df_cik.empty:
@@ -300,6 +307,7 @@ def page_stock():
         anal = prev.copy()
         anal['keb_aktual'] = np.nan
 
+    # Merge durasi_kirim dari master2
     if master2 is not None and 'pltd' in master2.columns and 'durasi_kirim' in master2.columns:
         anal = anal.merge(master2[['pltd','durasi_kirim']], on='PLTD', how='left')
     else:
