@@ -12,6 +12,7 @@ import time
 
 st.set_page_config(page_title="Dashboard PLTD Bach", page_icon="⚡", layout="wide")
 
+# ======================== STYLING ========================
 st.markdown("""
 <style>
     .main { background-color: #F8F9FA; }
@@ -90,7 +91,7 @@ def get_client():
 @st.cache_data(ttl=600)
 def load_all():
     cl = get_client()
-    res = {'stock':pd.DataFrame(),'m1':None,'m2':None,'cik':pd.DataFrame(),'sheets':[]}
+    res = {'stock':pd.DataFrame(),'m1':None,'m2':None,'cik':pd.DataFrame()}
 
     # STOK
     rows = []
@@ -117,55 +118,39 @@ def load_all():
     # MASTER
     try:
         sh = cl.open_by_key(MASTER_PLTD_ID)
-        all_sheets = [ws.title for ws in sh.worksheets()]
-        res['sheets'] = all_sheets
-
-        m1_sheet = None
-        m2_sheet = None
-        for s in all_sheets:
-            sl = s.strip().lower()
-            # Deteksi: mengandung "mater" atau "master" + "1"
-            if ('mater' in sl or 'master' in sl) and '1' in sl:
-                m1_sheet = s
-            if ('mater' in sl or 'master' in sl) and '2' in sl:
-                m2_sheet = s
-
-        if m1_sheet:
-            try:
-                ws = sh.worksheet(m1_sheet)
-                d = get_as_dataframe(ws, evaluate_formulas=True)
-                res['m1_raw_cols'] = [str(c).strip() for c in d.columns]
-                d.columns = [str(c).strip() for c in d.columns]
-                pltd_col = next((c for c in d.columns if 'pltd' in c.lower() or 'nama pltd' in c.lower()), None)
-                kode_col = next((c for c in d.columns if 'kode' in c.lower() and 'material' in c.lower()), None)
-                aktual_col = next((c for c in d.columns if 'aktual' in c.lower()), None)
-                if pltd_col: d.rename(columns={pltd_col:'pltd'}, inplace=True)
-                if kode_col: d.rename(columns={kode_col:'kode_material'}, inplace=True)
-                if aktual_col: d.rename(columns={aktual_col:'keb_aktual'}, inplace=True)
-                for col in ['pltd','kode_material']:
-                    if col in d.columns: d[col] = d[col].astype(str).str.strip().str.upper()
-                if 'keb_aktual' in d.columns:
-                    d['keb_aktual'] = pd.to_numeric(d['keb_aktual'], errors='coerce').fillna(0)
-                res['m1'] = d
-            except Exception as e:
-                res['m1_error'] = str(e)
-
-        if m2_sheet:
-            try:
-                ws = sh.worksheet(m2_sheet)
-                d = get_as_dataframe(ws, evaluate_formulas=True)
-                d.columns = [str(c).strip() for c in d.columns]
-                pltd_col = next((c for c in d.columns if 'pltd' in c.lower() or 'nama pltd' in c.lower()), None)
-                dur_col = next((c for c in d.columns if 'durasi' in c.lower()), None)
-                if pltd_col: d.rename(columns={pltd_col:'pltd'}, inplace=True)
-                if dur_col: d.rename(columns={dur_col:'durasi_kirim'}, inplace=True)
-                if 'pltd' in d.columns: d['pltd'] = d['pltd'].astype(str).str.strip().str.upper()
-                if 'durasi_kirim' in d.columns: d['durasi_kirim'] = pd.to_numeric(d['durasi_kirim'], errors='coerce').fillna(14)
-                else: d['durasi_kirim'] = 14
-                res['m2'] = d
-            except: pass
-    except Exception as e:
-        res['master_error'] = str(e)
+        for ws in sh.worksheets():
+            t = ws.title.strip().lower()
+            # Deteksi lebih fleksibel: mengandung "data" dan "1"
+            if ('data' in t or 'mater' in t) and '1' in t:
+                try:
+                    d = get_as_dataframe(ws, evaluate_formulas=True)
+                    d.columns = [str(c).strip() for c in d.columns]
+                    pltd_col = next((c for c in d.columns if 'pltd' in c.lower()), None)
+                    kode_col = next((c for c in d.columns if 'kode' in c.lower()), None)
+                    aktual_col = next((c for c in d.columns if 'aktual' in c.lower()), None)
+                    if pltd_col: d.rename(columns={pltd_col:'pltd'}, inplace=True)
+                    if kode_col: d.rename(columns={kode_col:'kode_material'}, inplace=True)
+                    if aktual_col: d.rename(columns={aktual_col:'keb_aktual'}, inplace=True)
+                    for col in ['pltd','kode_material']:
+                        if col in d.columns: d[col] = d[col].astype(str).str.strip().str.upper()
+                    if 'keb_aktual' in d.columns:
+                        d['keb_aktual'] = pd.to_numeric(d['keb_aktual'], errors='coerce').fillna(0)
+                    res['m1'] = d
+                except: pass
+            if ('data' in t or 'mater' in t) and '2' in t:
+                try:
+                    d = get_as_dataframe(ws, evaluate_formulas=True)
+                    d.columns = [str(c).strip() for c in d.columns]
+                    pltd_col = next((c for c in d.columns if 'pltd' in c.lower()), None)
+                    dur_col = next((c for c in d.columns if 'durasi' in c.lower()), None)
+                    if pltd_col: d.rename(columns={pltd_col:'pltd'}, inplace=True)
+                    if dur_col: d.rename(columns={dur_col:'durasi_kirim'}, inplace=True)
+                    if 'pltd' in d.columns: d['pltd'] = d['pltd'].astype(str).str.strip().str.upper()
+                    if 'durasi_kirim' in d.columns: d['durasi_kirim'] = pd.to_numeric(d['durasi_kirim'], errors='coerce').fillna(14)
+                    else: d['durasi_kirim'] = 14
+                    res['m2'] = d
+                except: pass
+    except: pass
 
     # CIKANDE
     try:
@@ -273,38 +258,70 @@ def page_stock():
         p1 = m1[['pltd','kode_material','keb_aktual']].copy()
         p1['pltd'] = p1['pltd'].str.strip().str.upper()
         p1['kode_material'] = p1['kode_material'].str.strip().str.upper()
+        
         sisa = prev.merge(p1, left_on=['PLTD','Kode Material'], right_on=['pltd','kode_material'], how='left')
         sisa.drop(columns=['pltd','kode_material'], inplace=True, errors='ignore')
 
+        # Hitung Sisa Bulan = ROUNDDOWN(Qty / keb_aktual, 1)
         sisa['Sisa Bulan'] = np.where(
             sisa['keb_aktual'].notna() & (sisa['keb_aktual'] > 0),
             np.floor(sisa['Qty'] / sisa['keb_aktual'] * 10) / 10,
             0.0
         )
 
-        sp = sisa.pivot_table(index=['Kode Material','Nama Material'], columns='PLTD', values='Sisa Bulan', aggfunc='first', fill_value=0.0)
+        # Pivot Sisa Bulan
+        sp = sisa.pivot_table(
+            index=['Kode Material','Nama Material'], 
+            columns='PLTD', 
+            values='Sisa Bulan', 
+            aggfunc='first', 
+            fill_value=0.0
+        )
+        
+        # Tambahkan WH Cikande
         cik_s = sisa.groupby(['Kode Material','Nama Material'])['WH Cikande'].max()
         sp = sp.join(cik_s)
         sp = sp.reset_index()
+        
+        # Urutkan kolom
         pltd_cols_s = [c for c in sp.columns if c not in ('Kode Material','Nama Material','WH Cikande')]
         sp = sp[['Kode Material','Nama Material'] + pltd_cols_s + ['WH Cikande']]
 
+        # Konfigurasi kolom
+        cfg_s = {
+            'Kode Material': st.column_config.TextColumn(pinned=True),
+            'Nama Material': st.column_config.TextColumn(pinned=True),
+        }
+        
+        # Tambahkan format untuk kolom PLTD (1 desimal)
+        for col in pltd_cols_s:
+            cfg_s[col] = st.column_config.NumberColumn(format="%.1f")
+        
+        # Highlight nilai ≤ 1.5 menggunakan Styler
         def highlight_low(val):
-            if isinstance(val, (int, float)) and 0 < val <= 1.5:
-                return 'background-color: #ffcccc'
+            if isinstance(val, (int, float)) and val > 0 and val <= 1.5:
+                return 'background-color: #ffcccc; color: #cc0000; font-weight: bold;'
             return ''
-
-        styled_sp = sp.style.applymap(highlight_low, subset=pltd_cols_s)
-        cfg_s = {'Kode Material':st.column_config.TextColumn(pinned=True),
-                 'Nama Material':st.column_config.TextColumn(pinned=True)}
-        st.dataframe(styled_sp, column_config=cfg_s, use_container_width=True, hide_index=True)
+        
+        # Terapkan styling
+        styled_df = sp.style.map(highlight_low, subset=pltd_cols_s)
+        
+        # Tampilkan dataframe dengan styling
+        st.dataframe(styled_df, column_config=cfg_s, use_container_width=True, hide_index=True)
+        
     else:
-        with st.expander("Debug Info"):
-            st.write("Sheet tersedia:", data.get('sheets', []))
-            st.write("M1 is None:", m1 is None)
+        with st.expander("🔍 Debug Info"):
+            st.write("**M1 tersedia:**", m1 is not None)
             if m1 is not None:
-                st.write("Kolom M1:", m1.columns.tolist())
-        st.info("Data Sisa Bulan tidak tersedia. Buka expander 'Debug Info'.")
+                st.write("**Kolom M1:**", m1.columns.tolist())
+                st.write("**Sample pltd:**", m1['pltd'].unique()[:5] if 'pltd' in m1.columns else 'TIDAK ADA')
+                st.write("**Sample kode_material:**", m1['kode_material'].unique()[:5] if 'kode_material' in m1.columns else 'TIDAK ADA')
+                st.write("**Sample keb_aktual:**", m1['keb_aktual'].head() if 'keb_aktual' in m1.columns else 'TIDAK ADA')
+            else:
+                st.write("M1 adalah None. Sheet tidak ditemukan.")
+            st.write("**Data Preventif tersedia:**", not prev.empty)
+            st.write("**Jumlah baris Preventif:**", len(prev))
+        st.warning("Data Sisa Bulan tidak tersedia. Buka expander 'Debug Info' untuk detail.")
 
     # ==== 3. CORRECTIVE ====
     st.subheader("🟠 Material Corrective")
