@@ -350,7 +350,7 @@ def page_analisis():
         st.warning("Data pemakaian (sheet Gabungan) belum tersedia.")
         return
 
-    # ==== NORMALISASI NAMA MATERIAL (LOWERCASE + STRIP) ====
+    # ==== NORMALISASI NAMA MATERIAL ====
     nama_map = {
         'water coollant reco-cool - drum': 'WATER COOLLANT RECO-COOL MULTIROAD-DRUM',
         'water coollant reco-cool multiroad-drum': 'WATER COOLLANT RECO-COOL MULTIROAD-DRUM',
@@ -379,37 +379,13 @@ def page_analisis():
         'element air filter aho1135': 'ELEMENT AIR FILTER AHO1135',
     }
     
-    # Normalisasi: lowercase dulu, lalu mapping
     df_pakai['Nama Material'] = df_pakai['Nama Material'].str.strip()
-    df_pakai['Nama Material Lower'] = df_pakai['Nama Material'].str.lower()
-    df_pakai['Nama Material'] = df_pakai['Nama Material Lower'].apply(
-        lambda x: nama_map.get(x, x.upper())  # kalau tidak ada di map, uppercase
-    )
-    df_pakai.drop(columns=['Nama Material Lower'], inplace=True)
-
-    # ... (lanjutkan dengan Kode & Jenis, Tanggal, dll.)
-
-    # ==== PIVOT COST ====
-    pivot_cost = f.pivot_table(
-        index='Nama Material',
-        values=['Keluar', 'HARGA_D365'],
-        aggfunc={'Keluar': 'sum', 'HARGA_D365': 'max'}
-    )
-    pivot_cost['Total_Cost'] = pivot_cost['Keluar'] * pivot_cost['HARGA_D365']
-    grand_total_cost = pivot_cost['Total_Cost'].sum()
+    df_pakai['Nama Material'] = df_pakai['Nama Material'].str.lower()
+    df_pakai['Nama Material'] = df_pakai['Nama Material'].apply(lambda x: nama_map.get(x, x.upper()))
     
-    # DEBUG: Tampilkan di expander (bisa dihapus nanti)
-    with st.expander("🔍 Debug Cost", expanded=False):
-        st.write(f"Grand Total Cost: Rp {grand_total_cost:,.0f}")
-        st.write("TOP 20 Cost:")
-        st.dataframe(pivot_cost.nlargest(20, 'Total_Cost')[['Keluar', 'HARGA_D365', 'Total_Cost']])
-        st.write("Material dengan HARGA_D365 = 0:")
-        no_harga = pivot_cost[pivot_cost['HARGA_D365'] == 0].index.tolist()
-        st.write(no_harga[:20])
-
     # Kode & Jenis
     if not df_stock.empty:
-        name_to_code = df_stock[['Nama Material', 'Kode Material']].drop_duplicates()
+        name_to_code = df_stock[['Nama Material','Kode Material']].drop_duplicates()
         name_to_code = name_to_code.groupby('Nama Material')['Kode Material'].apply(lambda x: ', '.join(sorted(set(x)))).reset_index()
         code_map = dict(zip(name_to_code['Nama Material'], name_to_code['Kode Material']))
         df_pakai['Kode Material'] = df_pakai['Nama Material'].map(code_map).fillna('')
@@ -459,7 +435,7 @@ def page_analisis():
     if sel_periode: f = f[f['Periode'].astype(str).isin(sel_periode)]
     if sel_jenis: f = f[f['Jenis'].astype(str).isin(sel_jenis)]
 
-    # PIVOT COST
+    # ==== PIVOT COST ====
     pivot_cost = f.pivot_table(
         index='Nama Material',
         values=['Keluar', 'HARGA_D365'],
@@ -468,7 +444,7 @@ def page_analisis():
     pivot_cost['Total_Cost'] = pivot_cost['Keluar'] * pivot_cost['HARGA_D365']
     grand_total_cost = pivot_cost['Total_Cost'].sum()
 
-    # KPI
+    # ==== KPI ====
     st.subheader("📈 Ringkasan Pemakaian")
     k1,k2,k3,k4 = st.columns(4)
     k1.metric("Total Transaksi", len(f))
@@ -477,7 +453,16 @@ def page_analisis():
     k4.metric("💰 Grand Total Cost", f"Rp {grand_total_cost:,.0f}")
     st.markdown("---")
 
-    # 1. TREN
+    # ==== DEBUG COST ====
+    with st.expander("🔍 Debug Cost", expanded=False):
+        st.write(f"**Grand Total Cost:** Rp {grand_total_cost:,.0f}")
+        st.write("**TOP 20 Cost:**")
+        st.dataframe(pivot_cost.nlargest(20, 'Total_Cost')[['Keluar', 'HARGA_D365', 'Total_Cost']], use_container_width=True)
+        st.write("**Material dengan HARGA_D365 = 0:**")
+        no_harga = pivot_cost[pivot_cost['HARGA_D365'] == 0].index.tolist()
+        st.write(no_harga[:30] if len(no_harga) > 30 else no_harga)
+
+    # ==== 1. TREN ====
     st.subheader("📈 Tren Pemakaian Material")
     if 'BulanStr' in f.columns:
         trend = f.groupby('BulanStr').agg(Masuk=('Masuk','sum'), Keluar=('Keluar','sum')).reset_index().sort_values('BulanStr')
@@ -494,7 +479,7 @@ def page_analisis():
             st.plotly_chart(fig1, use_container_width=True)
     st.markdown("---")
 
-    # 2. TOP 10 INBOUND VS OUTBOUND
+    # ==== 2. TOP 10 INBOUND VS OUTBOUND ====
     st.subheader("📥📤 TOP 10 Material: Inbound vs Outbound")
     top_10 = f.groupby('Nama Material').agg(Masuk=('Masuk','sum'), Keluar=('Keluar','sum')).sum(axis=1).nlargest(10).index.tolist()
     agg = f[f['Nama Material'].isin(top_10)].groupby('Nama Material').agg(Masuk=('Masuk','sum'), Keluar=('Keluar','sum')).reset_index()
@@ -510,7 +495,7 @@ def page_analisis():
         st.plotly_chart(fig2, use_container_width=True)
     st.markdown("---")
 
-    # 3. COST
+    # ==== 3. COST ====
     st.subheader("💰 TOP 10 Cost Material")
     if not pivot_cost.empty and grand_total_cost > 0:
         top_cost = pivot_cost[pivot_cost['Total_Cost'] > 0].nlargest(10, 'Total_Cost').sort_values('Total_Cost', ascending=True)
@@ -528,7 +513,7 @@ def page_analisis():
             st.plotly_chart(fig3, use_container_width=True)
     st.markdown("---")
 
-    # 4. TABEL DETAIL
+    # ==== 4. TABEL DETAIL ====
     st.subheader("📋 Detail Pemakaian Material")
     cols = ['Tanggal','Nama Material','Kode Material','Masuk','Keluar','Stok','Gudang','Keterangan','Transaksi','JobType','Jenis','HARGA_D365']
     cols = [c for c in cols if c in f.columns]
