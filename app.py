@@ -139,7 +139,6 @@ def load_all_data():
         sh = retry_gspread(client.open_by_key, MASTER_PLTD_ID)
         for ws in sh.worksheets():
             tl = ws.title.strip().lower()
-            # Master 1
             if 'master data 1' in tl:
                 try:
                     df1 = get_as_dataframe(ws, evaluate_formulas=True)
@@ -149,26 +148,28 @@ def load_all_data():
                           'Kebutuhan Perbulan Sesuai CF PM':'keb_pm',
                           'Kebutuhan Perbulan Sesuai Aktual FC':'keb_aktual'}
                     df1.rename(columns={k:v for k,v in rm.items() if k in df1.columns}, inplace=True)
+                    if 'pltd' in df1.columns:
+                        df1['pltd'] = df1['pltd'].astype(str).str.strip()
+                    if 'kode_material' in df1.columns:
+                        df1['kode_material'] = df1['kode_material'].astype(str).str.strip()
                     res['master1'] = df1
                 except: pass
-            # Master 2
             if 'master data 2' in tl:
                 try:
                     df2 = get_as_dataframe(ws, evaluate_formulas=True)
                     df2.columns = [str(c).strip() for c in df2.columns]
-                    # Rename EXACT
                     rm2 = {'Nama PLTD':'pltd','Durasi Kirim Darat+Laut (Hari)':'durasi_kirim'}
                     df2.rename(columns={k:v for k,v in rm2.items() if k in df2.columns}, inplace=True)
-                    # Fallback: cari kolom mengandung 'pltd'
                     if 'pltd' not in df2.columns:
                         for c in df2.columns:
                             if 'pltd' in c.lower() or 'nama' in c.lower():
                                 df2.rename(columns={c:'pltd'}, inplace=True); break
-                    # Fallback: durasi
                     if 'durasi_kirim' not in df2.columns:
                         for c in df2.columns:
                             if 'durasi' in c.lower() and ('darat' in c.lower() or 'kirim' in c.lower()):
                                 df2.rename(columns={c:'durasi_kirim'}, inplace=True); break
+                    if 'pltd' in df2.columns:
+                        df2['pltd'] = df2['pltd'].astype(str).str.strip()
                     if 'durasi_kirim' in df2.columns:
                         df2['durasi_kirim'] = pd.to_numeric(df2['durasi_kirim'], errors='coerce').fillna(14)
                     else:
@@ -236,7 +237,7 @@ def home():
     loc['lon'] = loc['PLTD'].map(lambda x: pltd_coords.get(x,(None,None))[1])
     st.map(loc.dropna(subset=['lat']), latitude='lat', longitude='lon', zoom=4, height=350)
 
-# ======================== STOCK ========================
+# ======================== STOCK PAGE ========================
 def page_stock():
     st.title("📦 Stok Material PLTD")
     data = load_all_data()
@@ -289,26 +290,23 @@ def page_stock():
     master1 = data['master1']
     master2 = data['master2']
 
-    # Debug kolom Master 2 (bisa dihapus nanti)
-    if master2 is not None:
-        st.caption(f"Master2 columns: {master2.columns.tolist()}")
-
     anal = prev.copy()
+    # Strip PLTD untuk merge
+    anal['PLTD'] = anal['PLTD'].astype(str).str.strip()
 
     if master1 is not None and 'pltd' in master1.columns and 'kode_material' in master1.columns:
-        anal = anal.merge(master1[['pltd','kode_material','keb_aktual']],
-                          left_on=['PLTD','Kode Material'], right_on=['pltd','kode_material'], how='left')
+        m1 = master1[['pltd','kode_material','keb_aktual']].copy()
+        m1['pltd'] = m1['pltd'].astype(str).str.strip()
+        m1['kode_material'] = m1['kode_material'].astype(str).str.strip()
+        anal = anal.merge(m1, left_on=['PLTD','Kode Material'], right_on=['pltd','kode_material'], how='left')
         anal.drop(columns=['pltd','kode_material'], inplace=True, errors='ignore')
     else:
         anal['keb_aktual'] = np.nan
 
-    if master2 is not None:
-        # Cek apakah 'pltd' dan 'durasi_kirim' ada
-        if 'pltd' in master2.columns and 'durasi_kirim' in master2.columns:
-            anal = anal.merge(master2[['pltd','durasi_kirim']], on='PLTD', how='left')
-        else:
-            anal['durasi_kirim'] = 14
-            st.warning("Master 2 tidak memiliki kolom 'pltd'/'durasi_kirim', fallback ke 14 hari.")
+    if master2 is not None and 'pltd' in master2.columns and 'durasi_kirim' in master2.columns:
+        m2 = master2[['pltd','durasi_kirim']].copy()
+        m2['pltd'] = m2['pltd'].astype(str).str.strip()
+        anal = anal.merge(m2, on='PLTD', how='left')
     else:
         anal['durasi_kirim'] = 14
     anal['durasi_kirim'] = anal['durasi_kirim'].fillna(14)
@@ -326,7 +324,8 @@ def page_stock():
                  column_config={'keb_aktual':'Keb. Aktual','Sisa Bulan':st.column_config.NumberColumn(format="%.1f Bulan"),
                                 'durasi_kirim':'Durasi Kirim (hari)'},
                  use_container_width=True, hide_index=True)
-    st.bar_chart(anal['Status'].value_counts())
+    if not anal.empty:
+        st.bar_chart(anal['Status'].value_counts())
 
 def page_analisis(): st.title("📊 Analisis Lanjutan"); st.info("Segera hadir.")
 def page_pemakaian(): st.title("🔥 Pemakaian Material"); st.info("Segera hadir.")
