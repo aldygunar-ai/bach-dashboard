@@ -24,9 +24,20 @@ st.markdown("""
     div[data-testid="stMetricValue"] { font-size: 28px; font-weight: 800; color: #0A2540; }
     .stPlotlyChart { background: white; border-radius: 10px; padding: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
     [data-testid="stDataFrame"] { background: white; border-radius: 10px; padding: 8px; }
-    /* Rata tengah untuk semua sel tabel */
-    [data-testid="stDataFrame"] table td, [data-testid="stDataFrame"] table th {
+    
+    /* Rata tengah untuk SEMUA sel tabel (header + data) */
+    [data-testid="stDataFrame"] div[data-testid="stTable"] table thead th,
+    [data-testid="stDataFrame"] div[data-testid="stTable"] table tbody td {
         text-align: center !important;
+        vertical-align: middle !important;
+    }
+    
+    /* Pinned columns (Kode & Nama Material) tetap rata kiri */
+    [data-testid="stDataFrame"] div[data-testid="stTable"] table tbody td:first-child,
+    [data-testid="stDataFrame"] div[data-testid="stTable"] table thead th:first-child,
+    [data-testid="stDataFrame"] div[data-testid="stTable"] table tbody td:nth-child(2),
+    [data-testid="stDataFrame"] div[data-testid="stTable"] table thead th:nth-child(2) {
+        text-align: left !important;
     }
 </style>
 """, unsafe_allow_html=True)
