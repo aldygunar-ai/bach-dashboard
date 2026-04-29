@@ -187,80 +187,52 @@ def load_all():
         sh = cl.open_by_key(MASTER_GABUNGAN_ID)
         ws = sh.worksheet('Gabungan')
         data = ws.get_all_values()
-        # BACA SEMUA BARIS (tidak dibatasi 4)
         if len(data) >= 2:
-            # Cari baris header (yang mengandung "Tanggal")
             header_row = None
-            for i, row in enumerate(data[:10]):  # cek 10 baris pertama
+            for i, row in enumerate(data[:10]):
                 row_text = ' '.join([str(c).lower() for c in row])
                 if 'tanggal' in row_text and 'nama' in row_text:
                     header_row = i
                     break
-            
             if header_row is None:
-                header_row = 2  # default baris ke-3 (index 2)
-            
+                header_row = 2
             p_rows = []
-            for r in data[header_row+1:]:  # mulai dari setelah header
-                if len(r) < 2:
-                    continue
-                if not any(str(c).strip() for c in r[:5]):  # skip baris kosong
-                    continue
-                    
+            for r in data[header_row+1:]:
+                if len(r) < 2: continue
+                if not any(str(c).strip() for c in r[:5]): continue
                 tanggal = r[0].strip() if len(r) > 0 else ''
-                masuk = r[1].strip() if len(r) > 1 else '0'     # Kolom B
-                keluar = r[2].strip() if len(r) > 2 else '0'    # Kolom C
-                stok = r[3].strip() if len(r) > 3 else '0'      # Kolom D
-                keterangan = r[4].strip() if len(r) > 4 else ''  # Kolom E
-                transaksi = r[7].strip() if len(r) > 7 else ''   # Kolom H
-                nama_material = r[8].strip() if len(r) > 8 else ''  # Kolom I
-                jobtype = r[9].strip() if len(r) > 9 else ''     # Kolom J
-                gudang = r[11].strip() if len(r) > 11 else ''    # Kolom L
-                harga = r[14].strip() if len(r) > 14 else '0'   # Kolom O
-                total = r[15].strip() if len(r) > 15 else '0'   # Kolom P
-                
+                masuk = r[1].strip() if len(r) > 1 else '0'
+                keluar = r[2].strip() if len(r) > 2 else '0'
+                stok = r[3].strip() if len(r) > 3 else '0'
+                keterangan = r[4].strip() if len(r) > 4 else ''
+                transaksi = r[7].strip() if len(r) > 7 else ''
+                nama_material = r[8].strip() if len(r) > 8 else ''
+                jobtype = r[9].strip() if len(r) > 9 else ''
+                gudang = r[11].strip() if len(r) > 11 else ''
+                harga = r[14].strip() if len(r) > 14 else '0'
+                total = r[15].strip() if len(r) > 15 else '0'
                 if nama_material:
-                    try:
-                        m = float(masuk.replace(',', '')) if masuk else 0.0
-                    except:
-                        m = 0.0
-                    try:
-                        k = float(keluar.replace(',', '')) if keluar else 0.0
-                    except:
-                        k = 0.0
-                    try:
-                        s = float(stok.replace(',', '')) if stok else 0.0
-                    except:
-                        s = 0.0
-                    try:
-                        h = float(harga.replace(',', '')) if harga else 0.0
-                    except:
-                        h = 0.0
-                    try:
-                        t = float(total.replace(',', '')) if total else 0.0
-                    except:
-                        t = 0.0
-                    
+                    try: m = float(masuk.replace(',','')) if masuk else 0.0
+                    except: m = 0.0
+                    try: k = float(keluar.replace(',','')) if keluar else 0.0
+                    except: k = 0.0
+                    try: s = float(stok.replace(',','')) if stok else 0.0
+                    except: s = 0.0
+                    try: h = float(harga.replace(',','')) if harga else 0.0
+                    except: h = 0.0
                     p_rows.append({
-                        'Tanggal': tanggal,
-                        'Nama Material': nama_material,
-                        'Masuk': m,
-                        'Keluar': k,
-                        'Stok': s,
-                        'Gudang': gudang,
-                        'Keterangan': keterangan,
-                        'Transaksi': transaksi,
-                        'JobType': jobtype,
+                        'Tanggal': tanggal, 'Nama Material': nama_material,
+                        'Masuk': m, 'Keluar': k, 'Stok': s,
+                        'Gudang': gudang, 'Keterangan': keterangan,
+                        'Transaksi': transaksi, 'JobType': jobtype,
                         'HARGA_D365': h,
-                        'TOTAL': t,
                     })
-            
             df_p = pd.DataFrame(p_rows)
             if not df_p.empty:
                 df_p['Tanggal'] = pd.to_datetime(df_p['Tanggal'], errors='coerce')
             res['pemakaian'] = df_p
-    except Exception as e:
-        pass  # jangan tampilkan warning agar tidak mengganggu
+    except: pass
+
     return res
 
 # ======================== HOME ========================
@@ -314,7 +286,6 @@ def page_stock():
 
     prev = f[f['Jenis']=='Preventive'].copy()
     corr = f[f['Jenis']=='Corrective'].copy()
-
     m1 = data['m1']
 
     st.subheader("🔵 Material Preventive")
@@ -373,47 +344,130 @@ def page_stock():
         st.info("Tidak ada data Corrective.")
 
 # ======================== ANALISIS ========================
-    # ==== 3. COST ANALYSIS (Total Keluar per Material × Harga Satuan) ====
-    st.subheader("💰 TOP 10 Cost Material")
+def page_analisis():
+    st.title("📊 Analisis Pemakaian Material")
+    data = load_all()
+    df_pakai = data.get('pemakaian', pd.DataFrame()).copy()
+    df_stock = data.get('stock', pd.DataFrame()).copy()
     
+    if df_pakai.empty:
+        st.warning("Data pemakaian (sheet Gabungan) belum tersedia.")
+        return
+
+    if not df_stock.empty:
+        name_to_code = df_stock[['Nama Material','Kode Material']].drop_duplicates()
+        name_to_code = name_to_code.groupby('Nama Material')['Kode Material'].apply(lambda x: ', '.join(sorted(set(x)))).reset_index()
+        code_map = dict(zip(name_to_code['Nama Material'], name_to_code['Kode Material']))
+        df_pakai['Kode Material'] = df_pakai['Nama Material'].map(code_map).fillna('')
+        df_pakai['Jenis'] = df_pakai['Kode Material'].apply(lambda k: 'Preventive' if is_prev(k) else ('Corrective' if k else 'Unknown'))
+    else:
+        df_pakai['Kode Material'] = ''
+        df_pakai['Jenis'] = 'Unknown'
+
+    if 'Tanggal' in df_pakai.columns:
+        df_pakai['Tanggal'] = pd.to_datetime(df_pakai['Tanggal'], errors='coerce')
+        df_pakai = df_pakai.dropna(subset=['Tanggal'])
+        df_pakai['Tahun'] = df_pakai['Tanggal'].dt.year.astype(int).astype(str)
+        bulan_map = {1:'Jan',2:'Feb',3:'Mar',4:'Apr',5:'Mei',6:'Jun',7:'Jul',8:'Ags',9:'Sep',10:'Okt',11:'Nov',12:'Des'}
+        df_pakai['Periode'] = df_pakai['Tanggal'].dt.month.map(bulan_map)
+        df_pakai['BulanStr'] = df_pakai['Tanggal'].dt.strftime('%Y-%m')
+
+    for col in ['Masuk','Keluar','Stok','HARGA_D365']:
+        if col in df_pakai.columns:
+            df_pakai[col] = pd.to_numeric(df_pakai[col], errors='coerce').fillna(0)
+
+    st.sidebar.header("Filter Analisis")
+    nama_opts = sorted(df_pakai['Nama Material'].unique().astype(str))
+    sel_nama = st.sidebar.multiselect("Nama Material", nama_opts, default=[])
+    kode_opts = sorted(df_pakai['Kode Material'].unique().astype(str))
+    sel_kode = st.sidebar.multiselect("Kode Material", kode_opts, default=[])
+    gudang_opts = sorted(df_pakai['Gudang'].unique().astype(str)) if 'Gudang' in df_pakai.columns else []
+    sel_gudang = st.sidebar.multiselect("Gudang", gudang_opts, default=[])
+    jobtype_opts = sorted(df_pakai['JobType'].unique().astype(str)) if 'JobType' in df_pakai.columns else []
+    sel_jobtype = st.sidebar.multiselect("JobType", jobtype_opts, default=[])
+    tahun_opts = sorted(df_pakai['Tahun'].astype(str).unique())
+    sel_tahun = st.sidebar.multiselect("Tahun", tahun_opts, default=[])
+    periode_opts = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Ags','Sep','Okt','Nov','Des']
+    sel_periode = st.sidebar.multiselect("Periode (Bulan)", periode_opts, default=[])
+    jenis_opts = sorted(df_pakai['Jenis'].unique().astype(str))
+    sel_jenis = st.sidebar.multiselect("Jenis Material", jenis_opts, default=[])
+
+    f = df_pakai.copy()
+    if sel_nama: f = f[f['Nama Material'].astype(str).isin(sel_nama)]
+    if sel_kode: f = f[f['Kode Material'].astype(str).isin(sel_kode)]
+    if sel_gudang: f = f[f['Gudang'].astype(str).isin(sel_gudang)]
+    if sel_jobtype: f = f[f['JobType'].astype(str).isin(sel_jobtype)]
+    if sel_tahun: f = f[f['Tahun'].astype(str).isin(sel_tahun)]
+    if sel_periode: f = f[f['Periode'].astype(str).isin(sel_periode)]
+    if sel_jenis: f = f[f['Jenis'].astype(str).isin(sel_jenis)]
+
+    st.subheader("📈 Ringkasan Pemakaian")
+    k1,k2,k3,k4 = st.columns(4)
+    k1.metric("Total Transaksi", len(f))
+    k2.metric("Total Keluar", f"{f['Keluar'].sum():,.0f}")
+    k3.metric("Total Masuk", f"{f['Masuk'].sum():,.0f}")
+    if 'HARGA_D365' in f.columns:
+        total_cost = (f['Keluar'] * f['HARGA_D365']).sum()
+        k4.metric("Total Cost", f"Rp {total_cost:,.0f}")
+    else:
+        k4.metric("Total Cost", "N/A")
+    st.markdown("---")
+
+    # 1. TOP 10 INBOUND VS OUTBOUND
+    st.subheader("📥📤 TOP 10 Material: Inbound vs Outbound")
+    top_10 = f.groupby('Nama Material').agg(Masuk=('Masuk','sum'), Keluar=('Keluar','sum')).sum(axis=1).nlargest(10).index.tolist()
+    agg = f[f['Nama Material'].isin(top_10)].groupby('Nama Material').agg(Masuk=('Masuk','sum'), Keluar=('Keluar','sum')).reset_index()
+    agg = agg.sort_values('Masuk', ascending=True)
+    if not agg.empty:
+        fig1 = go.Figure()
+        fig1.add_trace(go.Bar(y=agg['Nama Material'], x=agg['Masuk'], name='Inbound (Masuk)', orientation='h',
+                              marker=dict(color='#4B8BBE'), text=agg['Masuk'].apply(lambda x: f'{x:,.0f}'), textposition='outside'))
+        fig1.add_trace(go.Bar(y=agg['Nama Material'], x=agg['Keluar'], name='Outbound (Keluar)', orientation='h',
+                              marker=dict(color='#E67E22'), text=agg['Keluar'].apply(lambda x: f'{x:,.0f}'), textposition='outside'))
+        fig1.update_layout(barmode='group', height=400, margin=dict(l=200, r=80, t=30, b=60),
+                          legend=dict(orientation='h', yanchor='bottom', y=-0.25, xanchor='center', x=0.5))
+        st.plotly_chart(fig1, use_container_width=True)
+    st.markdown("---")
+
+    # 2. TREN
+    st.subheader("📈 Tren Pemakaian Material")
+    if 'BulanStr' in f.columns:
+        trend = f.groupby('BulanStr').agg(Masuk=('Masuk','sum'), Keluar=('Keluar','sum')).reset_index().sort_values('BulanStr')
+        if not trend.empty and (trend['Masuk'].sum() > 0 or trend['Keluar'].sum() > 0):
+            fig2 = go.Figure()
+            fig2.add_trace(go.Scatter(x=trend['BulanStr'], y=trend['Masuk'], mode='lines+markers+text',
+                                      name='Inbound', line=dict(color='#4B8BBE', width=2), marker=dict(size=8),
+                                      text=trend['Masuk'].apply(lambda x: f'{x:,.0f}'), textposition='top center', textfont=dict(size=10)))
+            fig2.add_trace(go.Scatter(x=trend['BulanStr'], y=trend['Keluar'], mode='lines+markers+text',
+                                      name='Outbound', line=dict(color='#E67E22', width=2), marker=dict(size=8),
+                                      text=trend['Keluar'].apply(lambda x: f'{x:,.0f}'), textposition='top center', textfont=dict(size=10)))
+            fig2.update_layout(height=400, xaxis_title='Periode', yaxis_title='Quantity',
+                              legend=dict(orientation='h', yanchor='bottom', y=-0.25, xanchor='center', x=0.5), xaxis=dict(tickangle=-45))
+            st.plotly_chart(fig2, use_container_width=True)
+    st.markdown("---")
+
+    # 3. COST
+    st.subheader("💰 TOP 10 Cost Material")
     if 'HARGA_D365' in f.columns and 'Keluar' in f.columns:
-        # Agregat: Total Keluar per Material, ambil harga satuan (max/mean)
-        cost_agg = f.groupby('Nama Material').agg(
-            Total_Keluar=('Keluar', 'sum'),
-            Harga_Satuan=('HARGA_D365', 'max')  # harga satuan (anggap sama per material)
-        ).reset_index()
-        
-        # Cost = Total Keluar × Harga Satuan
+        cost_agg = f.groupby('Nama Material').agg(Total_Keluar=('Keluar','sum'), Harga_Satuan=('HARGA_D365','max')).reset_index()
         cost_agg['Total_Cost'] = cost_agg['Total_Keluar'] * cost_agg['Harga_Satuan']
-        
-        # Filter yang ada cost-nya
         cost_agg = cost_agg[cost_agg['Total_Cost'] > 0]
-        
         if not cost_agg.empty:
-            top_cost = cost_agg.nlargest(10, 'Total_Cost')
-            top_cost = top_cost.sort_values('Total_Cost', ascending=True)
-            
+            top_cost = cost_agg.nlargest(10, 'Total_Cost').sort_values('Total_Cost', ascending=True)
             fig3 = go.Figure()
-            fig3.add_trace(go.Bar(
-                y=top_cost['Nama Material'],
-                x=top_cost['Total_Cost'],
-                orientation='h',
-                marker=dict(color='#27AE60'),
-                text=top_cost['Total_Cost'].apply(lambda x: f'Rp {x:,.0f}'),
-                textposition='outside',
-                hovertemplate='<b>%{y}</b><br>Total Keluar: %{customdata:,.0f}<br>Harga Satuan: Rp %{customdata2:,.0f}<br>Total Cost: Rp %{x:,.0f}<extra></extra>',
-                customdata=np.stack([top_cost['Total_Keluar'], top_cost['Harga_Satuan']], axis=-1)
-            ))
+            fig3.add_trace(go.Bar(y=top_cost['Nama Material'], x=top_cost['Total_Cost'], orientation='h',
+                                  marker=dict(color='#27AE60'), text=top_cost['Total_Cost'].apply(lambda x: f'Rp {x:,.0f}'), textposition='outside'))
             fig3.update_layout(height=380, margin=dict(l=200, r=100, t=30, b=20))
             st.plotly_chart(fig3, use_container_width=True)
-            
-            # Tampilkan total cost di KPI juga
-            grand_total_cost = cost_agg['Total_Cost'].sum()
-            st.metric("💰 Grand Total Cost (Semua Material)", f"Rp {grand_total_cost:,.0f}")
-        else:
-            st.info("Data cost tidak cukup (semua harga 0).")
-    else:
-        st.info("Kolom HARGA_D365 tidak tersedia di data pemakaian.")
+            st.metric("💰 Grand Total Cost (Semua Material)", f"Rp {cost_agg['Total_Cost'].sum():,.0f}")
+    st.markdown("---")
+
+    # 4. TABEL DETAIL
+    st.subheader("📋 Detail Pemakaian Material")
+    cols = ['Tanggal','Nama Material','Kode Material','Masuk','Keluar','Stok','Gudang','Keterangan','Transaksi','JobType','Jenis','HARGA_D365']
+    cols = [c for c in cols if c in f.columns]
+    if 'Tanggal' in f.columns: f = f.sort_values('Tanggal', ascending=False)
+    st.dataframe(f[cols], use_container_width=True, hide_index=True, height=400)
 
 def page_pemakaian(): st.title("🔥 Pemakaian Material"); st.info("Segera hadir.")
 def page_transaksi(): st.title("📊 Transaksi Project"); st.info("Segera hadir.")
