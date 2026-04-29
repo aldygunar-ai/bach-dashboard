@@ -120,14 +120,14 @@ def load_all():
         all_sheets = [ws.title for ws in sh.worksheets()]
         res['sheets'] = all_sheets
 
-        # Cari sheet yang mengandung "master" DAN "1"
         m1_sheet = None
         m2_sheet = None
         for s in all_sheets:
             sl = s.strip().lower()
-            if 'master' in sl and '1' in sl:
+            # Deteksi: mengandung "mater" atau "master" + "1"
+            if ('mater' in sl or 'master' in sl) and '1' in sl:
                 m1_sheet = s
-            if 'master' in sl and '2' in sl:
+            if ('mater' in sl or 'master' in sl) and '2' in sl:
                 m2_sheet = s
 
         if m1_sheet:
@@ -136,8 +136,7 @@ def load_all():
                 d = get_as_dataframe(ws, evaluate_formulas=True)
                 res['m1_raw_cols'] = [str(c).strip() for c in d.columns]
                 d.columns = [str(c).strip() for c in d.columns]
-                # Auto-detect kolom
-                pltd_col = next((c for c in d.columns if 'pltd' in c.lower()), None)
+                pltd_col = next((c for c in d.columns if 'pltd' in c.lower() or 'nama pltd' in c.lower()), None)
                 kode_col = next((c for c in d.columns if 'kode' in c.lower() and 'material' in c.lower()), None)
                 aktual_col = next((c for c in d.columns if 'aktual' in c.lower()), None)
                 if pltd_col: d.rename(columns={pltd_col:'pltd'}, inplace=True)
@@ -145,7 +144,6 @@ def load_all():
                 if aktual_col: d.rename(columns={aktual_col:'keb_aktual'}, inplace=True)
                 for col in ['pltd','kode_material']:
                     if col in d.columns: d[col] = d[col].astype(str).str.strip().str.upper()
-                # Konversi keb_aktual ke numerik
                 if 'keb_aktual' in d.columns:
                     d['keb_aktual'] = pd.to_numeric(d['keb_aktual'], errors='coerce').fillna(0)
                 res['m1'] = d
@@ -157,8 +155,8 @@ def load_all():
                 ws = sh.worksheet(m2_sheet)
                 d = get_as_dataframe(ws, evaluate_formulas=True)
                 d.columns = [str(c).strip() for c in d.columns]
-                pltd_col = next((c for c in d.columns if 'pltd' in c.lower()), None)
-                dur_col = next((c for c in d.columns if 'durasi' in c.lower() and ('darat' in c.lower() or 'laut' in c.lower())), None)
+                pltd_col = next((c for c in d.columns if 'pltd' in c.lower() or 'nama pltd' in c.lower()), None)
+                dur_col = next((c for c in d.columns if 'durasi' in c.lower()), None)
                 if pltd_col: d.rename(columns={pltd_col:'pltd'}, inplace=True)
                 if dur_col: d.rename(columns={dur_col:'durasi_kirim'}, inplace=True)
                 if 'pltd' in d.columns: d['pltd'] = d['pltd'].astype(str).str.strip().str.upper()
@@ -271,26 +269,6 @@ def page_stock():
     # ==== 2. SISA BULAN PREVENTIVE ====
     st.subheader("⏳ Sisa Stok Preventive dalam Bulan")
 
-    # Debug info
-    with st.expander("Debug Info"):
-        st.write("Sheet yang tersedia:", data.get('sheets', []))
-        if 'm1_raw_cols' in data:
-            st.write("Kolom asli M1:", data['m1_raw_cols'])
-        if m1 is not None:
-            st.write("Kolom M1 setelah rename:", m1.columns.tolist())
-            if 'pltd' in m1.columns:
-                st.write("Sample pltd:", m1['pltd'].unique()[:5])
-            if 'kode_material' in m1.columns:
-                st.write("Sample kode_material:", m1['kode_material'].unique()[:5])
-            if 'keb_aktual' in m1.columns:
-                st.write("Sample keb_aktual:", m1['keb_aktual'].head())
-        else:
-            st.write("M1 = None")
-        if 'm1_error' in data:
-            st.error(f"Error M1: {data['m1_error']}")
-        if 'master_error' in data:
-            st.error(f"Error Master: {data['master_error']}")
-
     if not prev.empty and m1 is not None and 'pltd' in m1.columns and 'kode_material' in m1.columns and 'keb_aktual' in m1.columns:
         p1 = m1[['pltd','kode_material','keb_aktual']].copy()
         p1['pltd'] = p1['pltd'].str.strip().str.upper()
@@ -321,7 +299,12 @@ def page_stock():
                  'Nama Material':st.column_config.TextColumn(pinned=True)}
         st.dataframe(styled_sp, column_config=cfg_s, use_container_width=True, hide_index=True)
     else:
-        st.info("Data Sisa Bulan tidak tersedia. Buka expander 'Debug Info' di atas.")
+        with st.expander("Debug Info"):
+            st.write("Sheet tersedia:", data.get('sheets', []))
+            st.write("M1 is None:", m1 is None)
+            if m1 is not None:
+                st.write("Kolom M1:", m1.columns.tolist())
+        st.info("Data Sisa Bulan tidak tersedia. Buka expander 'Debug Info'.")
 
     # ==== 3. CORRECTIVE ====
     st.subheader("🟠 Material Corrective")
