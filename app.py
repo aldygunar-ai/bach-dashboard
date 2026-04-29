@@ -394,6 +394,12 @@ def page_analisis():
         st.warning("Data pemakaian (sheet Gabungan) belum tersedia atau belum bisa dibaca.")
         return
     
+    # ==== DEBUG: TAMPILKAN KOLOM YANG TERSEDIA ====
+    with st.expander("🔍 Debug: Kolom tersedia di data pemakaian"):
+        st.write("Kolom:", df_pakai.columns.tolist())
+        st.write("Sample data (3 baris):")
+        st.dataframe(df_pakai.head(3), use_container_width=True)
+    
     # ==== DETEKSI KODE MATERIAL ====
     if not df_stock.empty:
         name_to_code = df_stock[['Nama Material', 'Kode Material']].drop_duplicates()
@@ -415,16 +421,18 @@ def page_analisis():
                      7:'Juli',8:'Agustus',9:'September',10:'Oktober',11:'November',12:'Desember'}
         df_pakai['Periode'] = df_pakai['Tanggal'].dt.month.map(bulan_map)
     
-    # ==== KONVERSI NUMERIK ====
-    for col in ['Masuk', 'Keluar', 'Stok']:
-        if col in df_pakai.columns:
+    # ==== KONVERSI NUMERIK — coba beberapa nama kolom ====
+    # Cari kolom Masuk, Keluar, Stok (mungkin beda nama)
+    masuk_col = next((c for c in df_pakai.columns if 'masuk' in c.lower()), None)
+    keluar_col = next((c for c in df_pakai.columns if 'keluar' in c.lower()), None)
+    stok_col = next((c for c in df_pakai.columns if 'stok' in c.lower()), None)
+    total_col = next((c for c in df_pakai.columns if 'total' in c.lower()), None)
+    
+    for col in [masuk_col, keluar_col, stok_col, total_col]:
+        if col:
             df_pakai[col] = pd.to_numeric(df_pakai[col], errors='coerce').fillna(0)
     
-    # Kolom TOTAL (kolom P) untuk cost
-    if 'TOTAL' in df_pakai.columns:
-        df_pakai['TOTAL'] = pd.to_numeric(df_pakai['TOTAL'], errors='coerce').fillna(0)
-    
-    # ==== SIDEBAR FILTER (KOSONG) ====
+    # ==== SIDEBAR FILTER ====
     st.sidebar.header("Filter Analisis")
     
     nama_opts = sorted(df_pakai['Nama Material'].unique().astype(str)) if 'Nama Material' in df_pakai.columns else []
@@ -458,15 +466,15 @@ def page_analisis():
     if sel_periode: f = f[f['Periode'].astype(str).isin(sel_periode)]
     if sel_jenis: f = f[f['Jenis'].astype(str).isin(sel_jenis)]
     
-    # ==== KPI RINGKASAN ====
+    # ==== KPI ====
     st.subheader("📈 Ringkasan Pemakaian")
     k1, k2, k3, k4, k5 = st.columns(5)
     k1.metric("Total Transaksi", len(f))
-    k2.metric("Total Keluar", f"{f['Keluar'].sum():,.0f}" if 'Keluar' in f.columns else "0")
-    k3.metric("Total Masuk", f"{f['Masuk'].sum():,.0f}" if 'Masuk' in f.columns else "0")
+    k2.metric("Total Keluar", f"{f[keluar_col].sum():,.0f}" if keluar_col else "0")
+    k3.metric("Total Masuk", f"{f[masuk_col].sum():,.0f}" if masuk_col else "0")
     k4.metric("Material Unik", f['Nama Material'].nunique() if 'Nama Material' in f.columns else 0)
-    if 'TOTAL' in f.columns:
-        total_cost = f['TOTAL'].sum()
+    if total_col:
+        total_cost = f[total_col].sum()
         k5.metric("Total Cost", f"Rp {total_cost:,.0f}")
     else:
         k5.metric("Total Cost", "N/A")
@@ -474,16 +482,17 @@ def page_analisis():
     st.markdown("---")
     
     # ==== GRAFIK 1: INBOUND VS OUTBOUND ====
-    if 'Tanggal' in f.columns and not f['Tanggal'].isna().all() and 'Masuk' in f.columns and 'Keluar' in f.columns:
+    if masuk_col and keluar_col and 'Tanggal' in f.columns and not f['Tanggal'].isna().all():
         f['BulanStr'] = f['Tanggal'].dt.to_period('M').astype(str)
         
         col1, col2 = st.columns(2)
         
         with col1:
             st.subheader("📥 Inbound (Masuk) per Bulan")
-            inbound = f.groupby('BulanStr')['Masuk'].sum().reset_index()
-            if not inbound.empty and inbound['Masuk'].sum() > 0:
-                fig_in = px.bar(inbound, x='BulanStr', y='Masuk', color='Masuk', color_continuous_scale='Blues')
+            inbound = f.groupby('BulanStr')[masuk_col].sum().reset_index()
+            inbound.columns = ['BulanStr', 'Qty']
+            if not inbound.empty and inbound['Qty'].sum() > 0:
+                fig_in = px.bar(inbound, x='BulanStr', y='Qty', color='Qty', color_continuous_scale='Blues')
                 fig_in.update_layout(height=350)
                 st.plotly_chart(fig_in, use_container_width=True)
             else:
@@ -491,9 +500,10 @@ def page_analisis():
         
         with col2:
             st.subheader("📤 Outbound (Keluar) per Bulan")
-            outbound = f.groupby('BulanStr')['Keluar'].sum().reset_index()
-            if not outbound.empty and outbound['Keluar'].sum() > 0:
-                fig_out = px.bar(outbound, x='BulanStr', y='Keluar', color='Keluar', color_continuous_scale='Reds')
+            outbound = f.groupby('BulanStr')[keluar_col].sum().reset_index()
+            outbound.columns = ['BulanStr', 'Qty']
+            if not outbound.empty and outbound['Qty'].sum() > 0:
+                fig_out = px.bar(outbound, x='BulanStr', y='Qty', color='Qty', color_continuous_scale='Reds')
                 fig_out.update_layout(height=350)
                 st.plotly_chart(fig_out, use_container_width=True)
             else:
@@ -501,10 +511,11 @@ def page_analisis():
     
     st.markdown("---")
     
-    # ==== GRAFIK 2: TREN PEMAKAIAN BULANAN ====
-    if 'Tanggal' in f.columns and not f['Tanggal'].isna().all() and 'Masuk' in f.columns and 'Keluar' in f.columns:
+    # ==== GRAFIK 2: TREN ====
+    if masuk_col and keluar_col and 'Tanggal' in f.columns and not f['Tanggal'].isna().all():
         st.subheader("📈 Tren Pemakaian Bulanan")
-        trend = f.groupby('BulanStr').agg({'Masuk':'sum','Keluar':'sum'}).reset_index()
+        trend = f.groupby('BulanStr').agg({masuk_col:'sum', keluar_col:'sum'}).reset_index()
+        trend.columns = ['BulanStr', 'Masuk', 'Keluar']
         if not trend.empty and (trend['Masuk'].sum() > 0 or trend['Keluar'].sum() > 0):
             fig_trend = px.line(trend, x='BulanStr', y=['Masuk','Keluar'], markers=True,
                                 color_discrete_map={'Masuk':'#4B8BBE','Keluar':'#E67E22'})
@@ -515,14 +526,14 @@ def page_analisis():
     
     st.markdown("---")
     
-    # ==== GRAFIK 3: COST MATERIAL ANALYSIS ====
+    # ==== GRAFIK 3: COST ====
     st.subheader("💰 Cost Material Analysis")
-    if 'TOTAL' in f.columns and 'Tanggal' in f.columns and not f['Tanggal'].isna().all():
+    if total_col and 'Tanggal' in f.columns and not f['Tanggal'].isna().all():
         f['BulanStr'] = f['Tanggal'].dt.to_period('M').astype(str)
         
-        top_cost_mat = f.groupby('Nama Material')['TOTAL'].sum().nlargest(5).index.tolist()
+        top_cost_mat = f.groupby('Nama Material')[total_col].sum().nlargest(5).index.tolist()
         cost_data = f[f['Nama Material'].isin(top_cost_mat)]
-        cost_pivot = cost_data.pivot_table(index='BulanStr', columns='Nama Material', values='TOTAL', aggfunc='sum', fill_value=0)
+        cost_pivot = cost_data.pivot_table(index='BulanStr', columns='Nama Material', values=total_col, aggfunc='sum', fill_value=0)
         
         if not cost_pivot.empty and cost_pivot.sum().sum() > 0:
             fig_cost = px.bar(cost_pivot, x=cost_pivot.index, y=cost_pivot.columns,
@@ -533,93 +544,104 @@ def page_analisis():
         else:
             st.info("Data cost tidak cukup.")
     else:
-        st.info("Data TOTAL (kolom P) tidak tersedia.")
+        st.info(f"Kolom TOTAL tidak ditemukan. Kolom tersedia: {df_pakai.columns.tolist()}")
     
     st.markdown("---")
     
-    # ==== GRAFIK 4: STOCK OUT RISK ====
+    # ==== GRAFIK 4: STOCK OUT RISK (DIPERBAIKI) ====
     st.subheader("⚠️ Stock Out Risk & Lead Time")
-    if not df_stock.empty and m1 is not None and 'pltd' in m1.columns and 'kode_material' in m1.columns and 'keb_aktual' in m1.columns:
-        prev_stock = df_stock[df_stock['Jenis']=='Preventive'].copy()
-        prev_stock['PLTD'] = prev_stock['PLTD'].astype(str).str.strip().str.upper()
-        prev_stock['Kode Material'] = prev_stock['Kode Material'].astype(str).str.strip().str.upper()
-        
-        m1_copy = m1[['pltd','kode_material','keb_aktual']].copy()
-        m1_copy['pltd'] = m1_copy['pltd'].astype(str).str.strip().str.upper()
-        m1_copy['kode_material'] = m1_copy['kode_material'].astype(str).str.strip().str.upper()
-        
-        risk = prev_stock.merge(m1_copy, left_on=['PLTD','Kode Material'], right_on=['pltd','kode_material'], how='left')
-        risk.drop(columns=['pltd','kode_material'], inplace=True, errors='ignore')
-        
-        risk['Sisa Hari'] = np.where(
-            risk['keb_aktual'].notna() & (risk['keb_aktual'] > 0),
-            risk['Qty'] / risk['keb_aktual'] * 30.5,
-            np.nan
-        )
-        
-        if m2 is not None and 'pltd' in m2.columns and 'durasi_kirim' in m2.columns:
-            m2_copy = m2[['pltd','durasi_kirim']].copy()
-            m2_copy['pltd'] = m2_copy['pltd'].astype(str).str.strip().str.upper()
-            risk = risk.merge(m2_copy, on='PLTD', how='left')
-            risk['durasi_kirim'] = risk['durasi_kirim'].fillna(14)
+    try:
+        if not df_stock.empty and m1 is not None and 'pltd' in m1.columns and 'kode_material' in m1.columns and 'keb_aktual' in m1.columns:
+            prev_stock = df_stock[df_stock['Jenis']=='Preventive'].copy()
+            prev_stock['PLTD'] = prev_stock['PLTD'].astype(str).str.strip().str.upper()
+            prev_stock['Kode Material'] = prev_stock['Kode Material'].astype(str).str.strip().str.upper()
+            
+            m1_copy = m1[['pltd','kode_material','keb_aktual']].copy()
+            m1_copy['pltd'] = m1_copy['pltd'].astype(str).str.strip().str.upper()
+            m1_copy['kode_material'] = m1_copy['kode_material'].astype(str).str.strip().str.upper()
+            
+            risk = prev_stock.merge(m1_copy, left_on=['PLTD','Kode Material'], right_on=['pltd','kode_material'], how='left')
+            
+            risk['Sisa Hari'] = np.where(
+                risk['keb_aktual'].notna() & (risk['keb_aktual'] > 0),
+                risk['Qty'] / risk['keb_aktual'] * 30.5,
+                np.nan
+            )
+            
+            if m2 is not None and 'pltd' in m2.columns and 'durasi_kirim' in m2.columns:
+                m2_copy = m2[['pltd','durasi_kirim']].copy()
+                m2_copy['pltd'] = m2_copy['pltd'].astype(str).str.strip().str.upper()
+                # Pastikan kolom PLTD masih ada di risk
+                if 'PLTD' in risk.columns:
+                    risk = risk.merge(m2_copy, on='PLTD', how='left')
+                    risk['durasi_kirim'] = risk['durasi_kirim'].fillna(14)
+                else:
+                    risk['durasi_kirim'] = 14
+            else:
+                risk['durasi_kirim'] = 14
+            
+            risk['Status Risiko'] = np.where(
+                risk['Sisa Hari'].isna(), 'Unknown',
+                np.where(risk['Sisa Hari'] < risk['durasi_kirim'], '🔴 Critical',
+                         np.where(risk['Sisa Hari'] < 1.5*risk['durasi_kirim'], '🟡 Warning', '🟢 Aman'))
+            )
+            
+            risk_count = risk['Status Risiko'].value_counts().reset_index()
+            risk_count.columns = ['Status','Count']
+            fig_risk = px.bar(risk_count, x='Status', y='Count', color='Status',
+                              color_discrete_map={'🔴 Critical':'#E74C3C','🟡 Warning':'#F39C12','🟢 Aman':'#27AE60','Unknown':'#95A5A6'})
+            fig_risk.update_layout(height=350, xaxis_title='', yaxis_title='Jumlah Material')
+            st.plotly_chart(fig_risk, use_container_width=True)
         else:
-            risk['durasi_kirim'] = 14
-        
-        risk['Status Risiko'] = np.where(
-            risk['Sisa Hari'].isna(), 'Unknown',
-            np.where(risk['Sisa Hari'] < risk['durasi_kirim'], '🔴 Critical',
-                     np.where(risk['Sisa Hari'] < 1.5*risk['durasi_kirim'], '🟡 Warning', '🟢 Aman'))
-        )
-        
-        risk_count = risk['Status Risiko'].value_counts().reset_index()
-        risk_count.columns = ['Status','Count']
-        fig_risk = px.bar(risk_count, x='Status', y='Count', color='Status',
-                          color_discrete_map={'🔴 Critical':'#E74C3C','🟡 Warning':'#F39C12','🟢 Aman':'#27AE60','Unknown':'#95A5A6'})
-        fig_risk.update_layout(height=350, xaxis_title='', yaxis_title='Jumlah Material')
-        st.plotly_chart(fig_risk, use_container_width=True)
-    else:
-        st.info("Data kebutuhan tidak tersedia.")
+            st.info("Data kebutuhan tidak tersedia.")
+    except Exception as e:
+        st.error(f"Error Stock Out Risk: {e}")
     
     st.markdown("---")
     
-    # ==== GRAFIK 5: PLAN VS AKTUAL ====
+    # ==== PLAN VS AKTUAL ====
     st.subheader("📊 Plan vs Aktual")
     if not df_stock.empty and m1 is not None and 'pltd' in m1.columns and 'kode_material' in m1.columns:
-        pva = df_stock[df_stock['Jenis']=='Preventive'].copy()
-        pva['PLTD'] = pva['PLTD'].astype(str).str.strip().str.upper()
-        pva['Kode Material'] = pva['Kode Material'].astype(str).str.strip().str.upper()
-        
-        m1_copy = m1[['pltd','kode_material','keb_pm','keb_aktual']].copy()
-        m1_copy['pltd'] = m1_copy['pltd'].astype(str).str.strip().str.upper()
-        m1_copy['kode_material'] = m1_copy['kode_material'].astype(str).str.strip().str.upper()
-        
-        pva = pva.merge(m1_copy, left_on=['PLTD','Kode Material'], right_on=['pltd','kode_material'], how='left')
-        pva.drop(columns=['pltd','kode_material'], inplace=True, errors='ignore')
-        
-        pva_agg = pva.groupby('Nama Material').agg({'keb_pm':'sum','keb_aktual':'sum','Qty':'sum'}).reset_index()
-        pva_agg = pva_agg[pva_agg['keb_pm'] > 0].head(10)
-        
-        if not pva_agg.empty:
-            fig_pva = px.bar(pva_agg, x='Nama Material', y=['keb_pm','keb_aktual'],
-                             title='Plan (PM) vs Aktual per Material (Top 10)',
-                             barmode='group',
-                             color_discrete_map={'keb_pm':'#3498DB','keb_aktual':'#E74C3C'})
-            fig_pva.update_layout(height=400, xaxis_tickangle=-45)
-            st.plotly_chart(fig_pva, use_container_width=True)
-        else:
-            st.info("Data plan vs aktual tidak cukup.")
+        try:
+            pva = df_stock[df_stock['Jenis']=='Preventive'].copy()
+            pva['PLTD'] = pva['PLTD'].astype(str).str.strip().str.upper()
+            pva['Kode Material'] = pva['Kode Material'].astype(str).str.strip().str.upper()
+            
+            m1_copy = m1[['pltd','kode_material','keb_pm','keb_aktual']].copy()
+            m1_copy['pltd'] = m1_copy['pltd'].astype(str).str.strip().str.upper()
+            m1_copy['kode_material'] = m1_copy['kode_material'].astype(str).str.strip().str.upper()
+            
+            pva = pva.merge(m1_copy, left_on=['PLTD','Kode Material'], right_on=['pltd','kode_material'], how='left')
+            
+            pva_agg = pva.groupby('Nama Material').agg({'keb_pm':'sum','keb_aktual':'sum','Qty':'sum'}).reset_index()
+            pva_agg = pva_agg[pva_agg['keb_pm'] > 0].head(10)
+            
+            if not pva_agg.empty:
+                fig_pva = px.bar(pva_agg, x='Nama Material', y=['keb_pm','keb_aktual'],
+                                 title='Plan (PM) vs Aktual per Material (Top 10)',
+                                 barmode='group',
+                                 color_discrete_map={'keb_pm':'#3498DB','keb_aktual':'#E74C3C'})
+                fig_pva.update_layout(height=400, xaxis_tickangle=-45)
+                st.plotly_chart(fig_pva, use_container_width=True)
+            else:
+                st.info("Data plan vs aktual tidak cukup.")
+        except Exception as e:
+            st.error(f"Error Plan vs Aktual: {e}")
     else:
         st.info("Data master tidak tersedia.")
     
     st.markdown("---")
     
-    # ==== TABEL DETAIL (PALING BAWAH) ====
+    # ==== TABEL DETAIL ====
     st.subheader("📋 Detail Pemakaian Material")
-    cols_show = ['Tanggal','Nama Material','Kode Material','Masuk','Keluar','Stok','Gudang','Keterangan','Transaksi','JobType','Jenis']
-    if 'TOTAL' in f.columns:
-        cols_show.append('TOTAL')
+    cols_show = ['Tanggal','Nama Material','Kode Material']
+    if masuk_col: cols_show.append(masuk_col)
+    if keluar_col: cols_show.append(keluar_col)
+    if stok_col: cols_show.append(stok_col)
+    for c in ['Gudang','Keterangan','Transaksi','JobType','Jenis']:
+        if c in f.columns: cols_show.append(c)
+    if total_col: cols_show.append(total_col)
     
-    cols_show = [c for c in cols_show if c in f.columns]
     if 'Tanggal' in f.columns:
         f = f.sort_values('Tanggal', ascending=False)
     st.dataframe(f[cols_show], use_container_width=True, hide_index=True, height=400)
