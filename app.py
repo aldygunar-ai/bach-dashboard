@@ -276,7 +276,7 @@ def page_stock():
 
     if m2 is not None:
         # Debug: tampilkan kolom m2
-        # st.write("M2 columns:", m2.columns.tolist())
+        st.write("M2 columns:", m2.columns.tolist())
         if 'pltd' in m2.columns and 'durasi_kirim' in m2.columns:
             p2 = m2[['pltd','durasi_kirim']].copy()
             p2['pltd'] = p2['pltd'].astype(str).str.strip()
