@@ -317,7 +317,104 @@ def page_stock():
     else:
         st.info("Tidak ada data Corrective.")
 
-def page_analisis(): st.title("📊 Analisis Lanjutan"); st.info("Segera hadir.")
+def page_analisis():
+    st.title("📊 Analisis Pemakaian Material")
+    
+    data = load_all()
+    df = data['stock'].copy()
+    if df.empty:
+        st.warning("Data stok belum tersedia.")
+        return
+    
+    m1 = data['m1']
+    
+    # Gabung dengan Master 1 untuk dapat keb_aktual & harga
+    if m1 is not None and 'pltd' in m1.columns and 'kode_material' in m1.columns:
+        m1_copy = m1[['pltd','kode_material','keb_aktual','harga']].copy() if 'harga' in m1.columns else m1[['pltd','kode_material','keb_aktual']].copy()
+        m1_copy['pltd'] = m1_copy['pltd'].str.strip().str.upper()
+        m1_copy['kode_material'] = m1_copy['kode_material'].str.strip().str.upper()
+        df['PLTD'] = df['PLTD'].str.strip().str.upper()
+        df['Kode Material'] = df['Kode Material'].str.strip().str.upper()
+        df = df.merge(m1_copy, left_on=['PLTD','Kode Material'], right_on=['pltd','kode_material'], how='left')
+        df.drop(columns=['pltd','kode_material'], inplace=True, errors='ignore')
+    else:
+        df['keb_aktual'] = np.nan
+        df['harga'] = np.nan
+    
+    # Sidebar filter
+    st.sidebar.header("Filter Analisis")
+    pltd_opts = sorted(df['PLTD'].unique())
+    sel_pltd = st.sidebar.multiselect("PLTD", pltd_opts, default=pltd_opts[:5] if len(pltd_opts)>5 else pltd_opts)
+    jenis_opts = ['Preventive','Corrective']
+    sel_jenis = st.sidebar.multiselect("Jenis Material", jenis_opts, default=['Preventive','Corrective'])
+    
+    f = df.copy()
+    if sel_pltd: f = f[f['PLTD'].isin(sel_pltd)]
+    if sel_jenis: f = f[f['Jenis'].isin(sel_jenis)]
+    
+    # KPI
+    st.subheader("📈 Ringkasan")
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric("Total Stok", f"{f['Qty'].sum():,.0f}")
+    k2.metric("Material Unik", f['Kode Material'].nunique())
+    avg_keb = f['keb_aktual'].mean() if 'keb_aktual' in f.columns else 0
+    k3.metric("Rata² Keb. Aktual", f"{avg_keb:,.1f}" if pd.notna(avg_keb) else "N/A")
+    if 'harga' in f.columns and not f['harga'].isna().all():
+        total_nilai = (f['Qty'] * f['harga'].fillna(0)).sum()
+        k4.metric("Estimasi Nilai Stok", f"Rp {total_nilai:,.0f}")
+    else:
+        k4.metric("Estimasi Nilai Stok", "N/A")
+    
+    st.markdown("---")
+    
+    # TOP 10
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("🔝 Top 10 Material (Qty)")
+        top_mat = f.groupby('Nama Material')['Qty'].sum().nlargest(10).reset_index()
+        fig1 = px.bar(top_mat, x='Qty', y='Nama Material', orientation='h', text='Qty', color='Qty', color_continuous_scale='Blues')
+        fig1.update_layout(yaxis={'categoryorder':'total ascending'}, height=400)
+        fig1.update_traces(textposition='outside', texttemplate='%{text:,.0f}')
+        st.plotly_chart(fig1, use_container_width=True)
+    
+    with col2:
+        st.subheader("📍 Top 10 PLTD (Total Qty)")
+        top_pltd = f.groupby('PLTD')['Qty'].sum().nlargest(10).reset_index()
+        fig2 = px.bar(top_pltd, x='Qty', y='PLTD', orientation='h', text='Qty', color='Qty', color_continuous_scale='Teal')
+        fig2.update_layout(yaxis={'categoryorder':'total ascending'}, height=400)
+        fig2.update_traces(textposition='outside', texttemplate='%{text:,.0f}')
+        st.plotly_chart(fig2, use_container_width=True)
+    
+    st.markdown("---")
+    
+    # KOMPOSISI
+    col3, col4 = st.columns(2)
+    with col3:
+        st.subheader("🥧 Komposisi Preventive vs Corrective")
+        jenis_count = f['Jenis'].value_counts().reset_index()
+        jenis_count.columns = ['Jenis','Count']
+        fig3 = px.pie(jenis_count, names='Jenis', values='Count', hole=0.4,
+                      color_discrete_map={'Preventive':'#4B8BBE','Corrective':'#E67E22'})
+        fig3.update_layout(height=350)
+        st.plotly_chart(fig3, use_container_width=True)
+    
+    with col4:
+        st.subheader("📊 Distribusi Qty per PLTD")
+        pltd_dist = f.groupby('PLTD')['Qty'].sum().reset_index().sort_values('Qty', ascending=True)
+        fig4 = px.bar(pltd_dist, x='Qty', y='PLTD', orientation='h', color='Qty', color_continuous_scale='Viridis')
+        fig4.update_layout(height=400)
+        st.plotly_chart(fig4, use_container_width=True)
+    
+    st.markdown("---")
+    
+    # TABEL DETAIL
+    st.subheader("📋 Detail Material per PLTD")
+    pivot_detail = f.pivot_table(index='PLTD', columns='Nama Material', values='Qty', aggfunc='sum', fill_value=0)
+    pivot_detail['Total'] = pivot_detail.sum(axis=1)
+    pivot_detail = pivot_detail.reset_index().sort_values('Total', ascending=False)
+    cfg_detail = {'PLTD': st.column_config.TextColumn(pinned=True)}
+    st.dataframe(pivot_detail, column_config=cfg_detail, use_container_width=True, hide_index=True, height=400)
+
 def page_pemakaian(): st.title("🔥 Pemakaian Material"); st.info("Segera hadir.")
 def page_transaksi(): st.title("📊 Transaksi Project"); st.info("Segera hadir.")
 
