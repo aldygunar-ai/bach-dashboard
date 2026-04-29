@@ -4,10 +4,11 @@ import numpy as np
 import plotly.express as px
 import gspread
 from gspread_dataframe import get_as_dataframe
-from gspread.exceptions import WorksheetNotFound
+from gspread.exceptions import WorksheetNotFound, APIError
 import requests
 import io
 import re
+import time
 
 # ======================== PAGE CONFIG ========================
 st.set_page_config(page_title="Dashboard PLTD Bach", page_icon="⚡", layout="wide")
@@ -46,7 +47,7 @@ PLTD_SHEETS = {
     'Wamena': '14ieCIQwEXf4hZ-RsOeLIMyKi5qEJLtQBwTz35b9JXxs',
 }
 MASTER_PLTD_ID = '1FsaZyKs3DgJlyZkx5qqpBotNK8Z6C8GOrNeJv3I8AJA'
-MASTER_D365_ID = '1C7r0AUC3taKIMR1CVmIle5gm333F4r2VPo7lWeqeH8A'  # gudang Cikande dari D365
+MASTER_D365_ID = '1C7r0AUC3taKIMR1CVmIle5gm333F4r2VPo7lWeqeH8A'
 DELIVERY_URL = "https://bachmulti-my.sharepoint.com/:x:/g/personal/prabawa_bachgroup_co_id/IQDpLV2xOcHmS51kfDxWqHQAAUHHovDCqOPtICGu3HUp6nc?download=1"
 
 # ======================== PREVENTIVE ========================
@@ -109,14 +110,32 @@ def get_gspread_client():
         creds['private_key'] = pk.replace('\\n', '\n')
     return gspread.service_account_from_dict(creds)
 
-# ======================== LOADERS ========================
-@st.cache_data(ttl=600)
-def load_stock_all():
+# ======================== RETRY HELPER ========================
+def retry_gspread(func, *args, max_retries=3, **kwargs):
+    """Retry logic untuk menangani rate limit."""
+    for attempt in range(max_retries):
+        try:
+            return func(*args, **kwargs)
+        except APIError as e:
+            if '429' in str(e) and attempt < max_retries - 1:
+                wait = 2 ** attempt
+                st.warning(f"Rate limit, tunggu {wait} detik...")
+                time.sleep(wait)
+            else:
+                raise
+
+# ======================== LOADERS (DIGABUNG) ========================
+@st.cache_data(ttl=3600)  # cache 1 jam
+def load_all_data():
+    """Gabungkan semua load data dalam satu fungsi untuk menghindari rate limit."""
     client = get_gspread_client()
+    result = {'stock': pd.DataFrame(), 'master1': None, 'master2': None, 'cikande': pd.DataFrame(), 'delivery': pd.DataFrame()}
+
+    # 1. Stok PLTD
     rows = []
     for pltd, sid in PLTD_SHEETS.items():
         try:
-            sh = client.open_by_key(sid)
+            sh = retry_gspread(client.open_by_key, sid)
             data = sh.sheet1.get_all_values()
             if len(data) < 2: continue
             for r in data[1:]:
@@ -132,70 +151,66 @@ def load_stock_all():
     if not df.empty:
         df['Jenis'] = df.apply(lambda r: 'Preventive' if is_preventive(r['Kode Material'], r['Nama Material']) else 'Corrective', axis=1)
         df = df.groupby(['PLTD', 'Kode Material', 'Nama Material', 'Jenis'], as_index=False)['Qty'].sum()
-    return df
+    result['stock'] = df
 
-@st.cache_data(ttl=600)
-def load_master_data():
-    client = get_gspread_client()
-    sh = client.open_by_key(MASTER_PLTD_ID)
-    df1 = df2 = None
+    # 2. Master Data
     try:
-        df1 = get_as_dataframe(sh.worksheet('Master data 1'), evaluate_formulas=True)
-        df1.columns = df1.columns.str.strip()
-        rename = {'Nama Material':'nama_material','Kode Material':'kode_material',
-                  'Nama PLTD':'pltd','Harga D365':'harga',
-                  'Kebutuhan Perbulan Sesuai CF PM':'keb_pm',
-                  'Kebutuhan Perbulan Sesuai Aktual FC':'keb_aktual'}
-        df1.rename(columns={k:v for k,v in rename.items() if k in df1.columns}, inplace=True)
+        sh = retry_gspread(client.open_by_key, MASTER_PLTD_ID)
+        try:
+            df1 = get_as_dataframe(sh.worksheet('Master data 1'), evaluate_formulas=True)
+            df1.columns = df1.columns.str.strip()
+            rename = {'Nama Material':'nama_material','Kode Material':'kode_material',
+                      'Nama PLTD':'pltd','Harga D365':'harga',
+                      'Kebutuhan Perbulan Sesuai CF PM':'keb_pm',
+                      'Kebutuhan Perbulan Sesuai Aktual FC':'keb_aktual'}
+            df1.rename(columns={k:v for k,v in rename.items() if k in df1.columns}, inplace=True)
+            result['master1'] = df1
+        except: pass
+        try:
+            df2 = get_as_dataframe(sh.worksheet('Master data 2'), evaluate_formulas=True)
+            df2.columns = df2.columns.str.strip()
+            rename2 = {'Nama PLTD':'pltd','Durasi Kirim Darat+Laut (Hari)':'durasi_kirim'}
+            df2.rename(columns={k:v for k,v in rename2.items() if k in df2.columns}, inplace=True)
+            if 'durasi_kirim' in df2.columns:
+                df2['durasi_kirim'] = pd.to_numeric(df2['durasi_kirim'], errors='coerce').fillna(14)
+            result['master2'] = df2
+        except: pass
     except: pass
-    try:
-        df2 = get_as_dataframe(sh.worksheet('Master data 2'), evaluate_formulas=True)
-        df2.columns = df2.columns.str.strip()
-        rename2 = {'Nama PLTD':'pltd','Durasi Kirim Darat+Laut (Hari)':'durasi_kirim'}
-        df2.rename(columns={k:v for k,v in rename2.items() if k in df2.columns}, inplace=True)
-        if 'durasi_kirim' in df2.columns:
-            df2['durasi_kirim'] = pd.to_numeric(df2['durasi_kirim'], errors='coerce').fillna(14)
-    except: pass
-    return df1, df2
 
-@st.cache_data(ttl=600)
-def load_cikande_d365():
-    """Baca Sheet1 dari spreadsheet D365 untuk stok gudang Cikande."""
-    client = get_gspread_client()
+    # 3. Cikande
     try:
-        sh = client.open_by_key(MASTER_D365_ID)
+        sh = retry_gspread(client.open_by_key, MASTER_D365_ID)
         ws = sh.worksheet('Sheet1')
         data = ws.get_all_values()
-        if len(data) < 2: return pd.DataFrame()
-        rows = []
-        for r in data[1:]:
-            # kolom: B = kode, C = nama, U (index 20) = qty
-            if len(r) <= 20: continue
-            kode = r[1].strip() if len(r) > 1 else ''
-            nama = r[2].strip() if len(r) > 2 else ''
-            qty_s = r[20].strip() if len(r) > 20 else '0'
-            if not is_valid_material(kode, nama): continue
-            qty = float(qty_s.replace(',', '')) if qty_s else 0.0
-            rows.append({'Kode Material': kode, 'Nama Material': nama, 'Qty Cikande': qty})
-        df = pd.DataFrame(rows)
-        if not df.empty:
-            df = df.groupby(['Kode Material', 'Nama Material'], as_index=False)['Qty Cikande'].sum()
-        return df
-    except Exception as e:
-        st.warning(f"Gagal baca stok Cikande: {e}")
-        return pd.DataFrame()
+        if len(data) >= 2:
+            cik_rows = []
+            for r in data[1:]:
+                if len(r) <= 20: continue
+                kode = r[1].strip() if len(r) > 1 else ''
+                nama = r[2].strip() if len(r) > 2 else ''
+                qty_s = r[20].strip() if len(r) > 20 else '0'
+                if not is_valid_material(kode, nama): continue
+                qty = float(qty_s.replace(',', '')) if qty_s else 0.0
+                cik_rows.append({'Kode Material': kode, 'Nama Material': nama, 'Qty Cikande': qty})
+            df_cik = pd.DataFrame(cik_rows)
+            if not df_cik.empty:
+                df_cik = df_cik.groupby(['Kode Material', 'Nama Material'], as_index=False)['Qty Cikande'].sum()
+            result['cikande'] = df_cik
+    except: pass
 
-@st.cache_data(ttl=600)
-def load_delivery():
+    # 4. Delivery
     try:
         resp = requests.get(DELIVERY_URL, headers={'User-Agent':'Mozilla/5.0'}, timeout=20)
-        return pd.read_excel(io.BytesIO(resp.content))
-    except: return pd.DataFrame()
+        result['delivery'] = pd.read_excel(io.BytesIO(resp.content))
+    except: pass
+
+    return result
 
 # ======================== PAGE: HOME ========================
 def home():
     st.title("⚡ Dashboard Stok & Logistik PLTD")
-    df = load_stock_all()
+    data = load_all_data()
+    df = data['stock']
     if df.empty: st.warning("Data belum tersedia."); return
     c1,c2,c3 = st.columns(3)
     c1.metric("PLTD", df['PLTD'].nunique())
@@ -219,11 +234,12 @@ def home():
 # ======================== PAGE: STOK PLTD ========================
 def page_stock():
     st.title("📦 Stok Material PLTD")
-    df = load_stock_all()
+    data = load_all_data()
+    df = data['stock']
     if df.empty: st.warning("Data belum tersedia."); return
 
     # Gabung Cikande
-    df_cik = load_cikande_d365()
+    df_cik = data['cikande']
     if not df_cik.empty:
         df = df.merge(df_cik, on=['Kode Material','Nama Material'], how='left')
         df['Qty Cikande'] = df['Qty Cikande'].fillna(0)
@@ -272,7 +288,8 @@ def page_stock():
     # ==================== SISA STOK PREVENTIVE ====================
     st.markdown("---")
     st.subheader("⏳ Sisa Stok Preventive dalam Bulan")
-    master1, master2 = load_master_data()
+    master1 = data['master1']
+    master2 = data['master2']
 
     if master1 is not None and 'pltd' in master1.columns and 'kode_material' in master1.columns:
         anal = prev.merge(master1[['pltd','kode_material','keb_aktual']],
@@ -283,13 +300,9 @@ def page_stock():
         anal = prev.copy()
         anal['keb_aktual'] = np.nan
 
-    if master2 is not None:
-        # Rename dulu supaya aman
-        if 'durasi_kirim' not in master2.columns and 'Durasi Kirim Darat+Laut (Hari)' in master2.columns:
-            master2['durasi_kirim'] = master2['Durasi Kirim Darat+Laut (Hari)']
-        if 'pltd' in master2.columns and 'durasi_kirim' in master2.columns:
-            anal = anal.merge(master2[['pltd','durasi_kirim']], on='PLTD', how='left')
-    if 'durasi_kirim' not in anal.columns:
+    if master2 is not None and 'pltd' in master2.columns and 'durasi_kirim' in master2.columns:
+        anal = anal.merge(master2[['pltd','durasi_kirim']], on='PLTD', how='left')
+    else:
         anal['durasi_kirim'] = 14
     anal['durasi_kirim'] = anal['durasi_kirim'].fillna(14)
 
