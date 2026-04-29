@@ -253,19 +253,34 @@ def page_stock():
         p1['kode_material'] = p1['kode_material'].str.strip().str.upper()
         sisa = prev.merge(p1, left_on=['PLTD','Kode Material'], right_on=['pltd','kode_material'], how='left')
         sisa.drop(columns=['pltd','kode_material'], inplace=True, errors='ignore')
+
+        # Hitung Sisa Bulan = ROUNDDOWN(Qty / keb_aktual, 1)
         sisa['Sisa Bulan'] = np.where(
-            sisa['keb_aktual'].notna() & (sisa['keb_aktual']>0),
-            (sisa['Qty'] / sisa['keb_aktual']).round(1).astype(str) + ' Bulan',
-            '0 Bulan')
-        sp = sisa.pivot_table(index=['Kode Material','Nama Material'], columns='PLTD', values='Sisa Bulan', aggfunc='first', fill_value='0 Bulan')
+            sisa['keb_aktual'].notna() & (sisa['keb_aktual'] > 0),
+            np.floor(sisa['Qty'] / sisa['keb_aktual'] * 10) / 10,  # round down 1 desimal
+            0.0
+        )
+
+        # Pivot Sisa Bulan
+        sp = sisa.pivot_table(index=['Kode Material','Nama Material'], columns='PLTD', values='Sisa Bulan', aggfunc='first', fill_value=0.0)
         cik_s = sisa.groupby(['Kode Material','Nama Material'])['WH Cikande'].max()
         sp = sp.join(cik_s)
         sp = sp.reset_index()
         pltd_cols_s = [c for c in sp.columns if c not in ('Kode Material','Nama Material','WH Cikande')]
         sp = sp[['Kode Material','Nama Material'] + pltd_cols_s + ['WH Cikande']]
+
+        # Highlight nilai <= 1.5 dengan warna merah
+        def highlight_low(val):
+            if isinstance(val, (int, float)):
+                if val <= 1.5 and val > 0:
+                    return 'background-color: #ffcccc'
+            return ''
+
+        styled_sp = sp.style.applymap(highlight_low, subset=pltd_cols_s)
+
         cfg_s = {'Kode Material':st.column_config.TextColumn(pinned=True),
                  'Nama Material':st.column_config.TextColumn(pinned=True)}
-        st.dataframe(sp, column_config=cfg_s, use_container_width=True, hide_index=True)
+        st.dataframe(styled_sp, column_config=cfg_s, use_container_width=True, hide_index=True)
     else:
         st.info("Data Sisa Bulan tidak tersedia (Master 1 tidak ada atau kolom tidak cocok).")
 
