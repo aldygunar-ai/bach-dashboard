@@ -345,10 +345,45 @@ def page_stock():
 
 # ======================== ANALISIS ========================
 def page_analisis():
-    st.title("📊 Analisis Pemakaian Material")
+    st.title("📊 Analisis Pemakaian Material - DEBUG")
     data = load_all()
     df_pakai = data.get('pemakaian', pd.DataFrame()).copy()
     df_stock = data.get('stock', pd.DataFrame()).copy()
+    
+    if df_pakai.empty:
+        st.warning("Data pemakaian (sheet Gabungan) belum tersedia.")
+        return
+
+    # ==== DEBUG INFO ====
+    with st.expander("🔍 DEBUG: Data Pemakaian Mentah", expanded=True):
+        st.write(f"**Jumlah baris:** {len(df_pakai)}")
+        st.write(f"**Kolom:** {df_pakai.columns.tolist()}")
+        st.write("**Sample data (10 baris pertama):**")
+        st.dataframe(df_pakai.head(10), use_container_width=True)
+        
+        st.write("**Sample data (10 baris terakhir):**")
+        st.dataframe(df_pakai.tail(10), use_container_width=True)
+        
+        st.write("**Nilai HARGA_D365 yang unik (20 pertama):**")
+        harga_unique = df_pakai['HARGA_D365'].value_counts().head(20) if 'HARGA_D365' in df_pakai.columns else 'KOLOM TIDAK ADA'
+        st.write(harga_unique)
+        
+        st.write("**Material dengan HARGA_D365 > 0:**")
+        if 'HARGA_D365' in df_pakai.columns:
+            with_harga = df_pakai[df_pakai['HARGA_D365'] > 0]['Nama Material'].unique()
+            st.write(list(with_harga)[:30])
+        
+        st.write("**Total Keluar per Material (TOP 20):**")
+        if 'Keluar' in df_pakai.columns and 'Nama Material' in df_pakai.columns:
+            top_keluar = df_pakai.groupby('Nama Material')['Keluar'].sum().nlargest(20)
+            st.write(top_keluar)
+        
+        st.write("**Sample material dengan Keluar > 0 dan HARGA_D365:**")
+        if 'Keluar' in df_pakai.columns and 'HARGA_D365' in df_pakai.columns:
+            sample = df_pakai[(df_pakai['Keluar'] > 0) & (df_pakai['HARGA_D365'] > 0)][['Nama Material', 'Keluar', 'HARGA_D365']].head(20)
+            st.dataframe(sample, use_container_width=True)
+    
+    # ... lanjutkan dengan kode normal (filter, grafik, dll)
     
     if df_pakai.empty:
         st.warning("Data pemakaian (sheet Gabungan) belum tersedia.")
