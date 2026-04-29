@@ -68,17 +68,17 @@ NORMALIZE_NAME = {
 }
 
 def normalize_material(kode, nama):
-    kode_clean = str(kode).strip().upper()
-    if kode_clean in NORMALIZE_NAME: return NORMALIZE_NAME[kode_clean]
+    k = str(kode).strip().upper()
+    if k in NORMALIZE_NAME: return NORMALIZE_NAME[k]
     for pk, pn in PREVENTIVE_MAP.items():
-        if kode_clean == pk.upper(): return pn
+        if k == pk.upper(): return pn
     return nama
 
 def is_preventive_exact(kode):
-    kode_norm = str(kode).strip().upper()
+    k = str(kode).strip().upper()
     for pk in PREVENTIVE_MAP:
-        if kode_norm == pk.upper(): return True
-        for part in re.split(r'\s*/\s*', kode_norm):
+        if k == pk.upper(): return True
+        for part in re.split(r'\s*/\s*', k):
             if part == pk.upper(): return True
     return False
 
@@ -119,7 +119,7 @@ def load_all():
                 qty_s = r[8].strip() if len(r)>8 else '0'
                 if not is_valid(kode,nama): continue
                 qty = float(qty_s.replace(',','')) if qty_s else 0.0
-                rows.append((pltd, kode.upper(), normalize_material(kode,nama), qty))
+                rows.append((pltd.strip(), kode.upper().strip(), normalize_material(kode,nama).strip(), qty))
         except: pass
     df = pd.DataFrame(rows, columns=['PLTD','Kode Material','Nama Material','Qty'])
     if not df.empty:
@@ -141,29 +141,18 @@ def load_all():
                           'Kebutuhan Perbulan Sesuai CF PM':'keb_pm',
                           'Kebutuhan Perbulan Sesuai Aktual FC':'keb_aktual'}
                     d.rename(columns={k:v for k,v in rm.items() if k in d.columns}, inplace=True)
-                    if 'pltd' in d.columns: d['pltd'] = d['pltd'].astype(str).str.strip()
-                    if 'kode_material' in d.columns: d['kode_material'] = d['kode_material'].astype(str).str.strip().str.upper()
+                    for col in ['pltd','kode_material']:
+                        if col in d.columns: d[col] = d[col].astype(str).str.strip().str.upper()
                     res['m1'] = d
                 except: pass
             if 'master data 2' in t:
                 try:
                     d = get_as_dataframe(ws, evaluate_formulas=True)
                     d.columns = [str(c).strip() for c in d.columns]
-                    # Debug: tampilkan kolom asli
-                    # st.write("Master2 RAW:", d.columns.tolist())
-                    # Rename EXACT
+                    # Rename eksak
                     if 'Nama PLTD' in d.columns: d.rename(columns={'Nama PLTD':'pltd'}, inplace=True)
                     if 'Durasi Kirim Darat+Laut (Hari)' in d.columns: d.rename(columns={'Durasi Kirim Darat+Laut (Hari)':'durasi_kirim'}, inplace=True)
-                    # Fallback
-                    if 'pltd' not in d.columns:
-                        for c in d.columns:
-                            if 'pltd' in c.lower() or 'nama' in c.lower():
-                                d.rename(columns={c:'pltd'}, inplace=True); break
-                    if 'durasi_kirim' not in d.columns:
-                        for c in d.columns:
-                            if 'durasi' in c.lower():
-                                d.rename(columns={c:'durasi_kirim'}, inplace=True); break
-                    if 'pltd' in d.columns: d['pltd'] = d['pltd'].astype(str).str.strip()
+                    if 'pltd' in d.columns: d['pltd'] = d['pltd'].astype(str).str.strip().str.upper()
                     if 'durasi_kirim' in d.columns: d['durasi_kirim'] = pd.to_numeric(d['durasi_kirim'], errors='coerce').fillna(14)
                     else: d['durasi_kirim'] = 14
                     res['m2'] = d
@@ -193,7 +182,7 @@ def load_all():
             try: qty = float(qty_s.replace(',','')) if qty_s else 0.0
             except: qty = 0.0
             if nama or kode:
-                crows.append({'Kode Material':kode.upper(),'Nama Material':normalize_material(kode,nama),'WH Cikande':qty})
+                crows.append({'Kode Material':kode.upper().strip(),'Nama Material':normalize_material(kode,nama).strip(),'WH Cikande':qty})
         dc = pd.DataFrame(crows)
         if not dc.empty: dc = dc.groupby(['Kode Material','Nama Material'], as_index=False)['WH Cikande'].sum()
         res['cik'] = dc
@@ -216,7 +205,7 @@ def home():
     c1,c2,c3 = st.columns(3)
     c1.metric("PLTD", df['PLTD'].nunique())
     c2.metric("Total Stok", f"{df['Qty'].sum():,.0f}")
-    c3.metric("Preventive / Corrective", f"{(df['Jenis']=='Preventive').sum()} / {(df['Jenis']=='Corrective').sum()}")
+    c3.metric("Prev / Corr", f"{(df['Jenis']=='Preventive').sum()} / {(df['Jenis']=='Corrective').sum()}")
     coords = {
         'Pemaron':(-8.16,114.68),'Mangoli':(-1.88,125.37),'Tayan':(-0.03,110.10),
         'Timika':(-4.56,136.89),'Bobong':(-1.95,124.39),'Merawang':(-1.95,105.96),
@@ -236,7 +225,6 @@ def page_stock():
     df = data['stock'].copy()
     if df.empty: st.warning("Data belum tersedia."); return
 
-    # Gabung Cikande
     cik = data['cik']
     if not cik.empty:
         df = df.merge(cik, on=['Kode Material','Nama Material'], how='left')
@@ -259,31 +247,30 @@ def page_stock():
     prev = f[f['Jenis']=='Preventive'].copy()
     corr = f[f['Jenis']=='Corrective'].copy()
 
-    # ==== GABUNG SISA BULAN UNTUK PREVENTIVE ====
+    # ==== GABUNG SISA BULAN ====
     m1 = data['m1']
     m2 = data['m2']
 
+    # Debug: tampilkan nilai unik PLTD
+    # st.write("PLTD di stok:", prev['PLTD'].unique())
+    # st.write("PLTD di M2:", m2['pltd'].unique() if m2 is not None else 'None')
+
     if m1 is not None and 'pltd' in m1.columns and 'kode_material' in m1.columns:
         p1 = m1[['pltd','kode_material','keb_aktual']].copy()
-        p1['pltd'] = p1['pltd'].astype(str).str.strip()
+        p1['pltd'] = p1['pltd'].astype(str).str.strip().str.upper()
         p1['kode_material'] = p1['kode_material'].astype(str).str.strip().str.upper()
-        prev['PLTD'] = prev['PLTD'].astype(str).str.strip()
-        prev['Kode Material'] = prev['Kode Material'].astype(str).str.strip().str.upper()
-        prev = prev.merge(p1, left_on=['PLTD','Kode Material'], right_on=['pltd','kode_material'], how='left')
-        prev.drop(columns=['pltd','kode_material'], inplace=True, errors='ignore')
+        prev['PLTD_UP'] = prev['PLTD'].astype(str).str.strip().str.upper()
+        prev = prev.merge(p1, left_on=['PLTD_UP','Kode Material'], right_on=['pltd','kode_material'], how='left')
+        prev.drop(columns=['PLTD_UP','pltd','kode_material'], inplace=True, errors='ignore')
     else:
         prev['keb_aktual'] = np.nan
 
-    if m2 is not None:
-        # Debug: tampilkan kolom m2
-        st.write("M2 columns:", m2.columns.tolist())
-        if 'pltd' in m2.columns and 'durasi_kirim' in m2.columns:
-            p2 = m2[['pltd','durasi_kirim']].copy()
-            p2['pltd'] = p2['pltd'].astype(str).str.strip()
-            prev = prev.merge(p2, on='PLTD', how='left')
-        else:
-            prev['durasi_kirim'] = 14
-            st.warning("Master2 tidak memiliki kolom 'pltd'/'durasi_kirim', fallback 14 hari.")
+    if m2 is not None and 'pltd' in m2.columns and 'durasi_kirim' in m2.columns:
+        p2 = m2[['pltd','durasi_kirim']].copy()
+        p2['pltd'] = p2['pltd'].astype(str).str.strip().str.upper()
+        prev['PLTD_UP'] = prev['PLTD'].astype(str).str.strip().str.upper()
+        prev = prev.merge(p2, left_on='PLTD_UP', right_on='pltd', how='left')
+        prev.drop(columns=['PLTD_UP','pltd'], inplace=True, errors='ignore')
     else:
         prev['durasi_kirim'] = 14
     prev['durasi_kirim'] = prev['durasi_kirim'].fillna(14)
@@ -304,17 +291,10 @@ def page_stock():
         if data.empty: st.info(f"Tidak ada data {judul}."); return
         st.subheader(f"{ikon} Material {judul}")
         if judul == 'Preventive':
-            # Pivot dengan Sisa Bulan
-            cols_pivot = ['PLTD']
-            vals = 'Qty'
-            if 'Sisa Bulan' in data.columns:
-                # Ganti Qty dengan Sisa Bulan untuk tampilan
-                data['Qty Tampil'] = data['Sisa Bulan']
-                vals = 'Qty Tampil'
-            p = data.pivot_table(index=['Kode Material','Nama Material'], columns='PLTD', values=vals, aggfunc='first', fill_value='0 Bulan')
+            data['Qty Tampil'] = data['Sisa Bulan']
+            p = data.pivot_table(index=['Kode Material','Nama Material'], columns='PLTD', values='Qty Tampil', aggfunc='first', fill_value='0 Bulan')
             cik = data.groupby(['Kode Material','Nama Material'])['WH Cikande'].max()
             p = p.join(cik)
-            # Total tidak relevan untuk "Bulan", tapi tetap kita hitung
             p = p.reset_index()
             pltd_cols = [c for c in p.columns if c not in ('Kode Material','Nama Material','WH Cikande')]
             p = p[['Kode Material','Nama Material'] + pltd_cols + ['WH Cikande']]
@@ -322,7 +302,6 @@ def page_stock():
                    'Nama Material':st.column_config.TextColumn(pinned=True)}
             st.dataframe(p, column_config=cfg, use_container_width=True, hide_index=True)
 
-            # Tampilkan juga status
             st.subheader("🔴🟡🟢 Status Lead Time")
             st.dataframe(data[['PLTD','Kode Material','Nama Material','Qty','keb_aktual','Sisa Bulan','durasi_kirim','Status']].drop_duplicates(),
                          column_config={'keb_aktual':'Keb. Aktual','durasi_kirim':'Durasi Kirim (hari)'},
