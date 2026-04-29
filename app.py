@@ -344,7 +344,42 @@ def page_stock():
 
 # ======================== ANALISIS ========================
 def page_analisis():
+    # ==================== CUSTOM CSS ====================
+    st.markdown("""
+    <style>
+        .chart-container {
+            background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.06);
+            border: 1px solid #eaeaea;
+        }
+        .kpi-card {
+            background: linear-gradient(135deg, #0A2540 0%, #1F4E79 100%);
+            border-radius: 12px;
+            padding: 20px;
+            color: white;
+            text-align: center;
+            box-shadow: 0 4px 15px rgba(10,37,64,0.3);
+        }
+        .kpi-card p { color: #CCCCCC; font-size: 12px; margin: 0; }
+        .kpi-card h2 { color: white; font-size: 28px; margin: 5px 0; font-weight: 700; }
+        .section-title {
+            font-size: 20px;
+            font-weight: 700;
+            color: #0A2540;
+            margin-bottom: 15px;
+            padding-bottom: 8px;
+            border-bottom: 3px solid #4B8BBE;
+            display: inline-block;
+        }
+    </style>
+    """, unsafe_allow_html=True)
+    
     st.title("📊 Analisis Pemakaian Material")
+    st.markdown("<p style='color:#666; margin-top:-10px;'>Dashboard analisis pemakaian material & pengendalian stok</p>", unsafe_allow_html=True)
+    
     data = load_all()
     df_pakai = data.get('pemakaian', pd.DataFrame()).copy()
     df_stock = data.get('stock', pd.DataFrame()).copy()
@@ -371,10 +406,10 @@ def page_analisis():
         df_pakai['Tanggal'] = pd.to_datetime(df_pakai['Tanggal'], errors='coerce')
         df_pakai = df_pakai.dropna(subset=['Tanggal'])
         df_pakai['Tahun'] = df_pakai['Tanggal'].dt.year.astype(int).astype(str)
-        bulan_map = {1:'Januari',2:'Februari',3:'Maret',4:'April',5:'Mei',6:'Juni',
-                     7:'Juli',8:'Agustus',9:'September',10:'Oktober',11:'November',12:'Desember'}
+        bulan_map = {1:'Jan',2:'Feb',3:'Mar',4:'Apr',5:'Mei',6:'Jun',
+                     7:'Jul',8:'Ags',9:'Sep',10:'Okt',11:'Nov',12:'Des'}
         df_pakai['Periode'] = df_pakai['Tanggal'].dt.month.map(bulan_map)
-        df_pakai['BulanStr'] = df_pakai['Tanggal'].dt.to_period('M').astype(str)
+        df_pakai['BulanStr'] = df_pakai['Tanggal'].dt.strftime('%Y-%m')
 
     # ==== NUMERIK ====
     for col in ['Masuk','Keluar','Stok','TOTAL']:
@@ -382,28 +417,28 @@ def page_analisis():
             df_pakai[col] = pd.to_numeric(df_pakai[col], errors='coerce').fillna(0)
 
     # ==== FILTER SIDEBAR ====
-    st.sidebar.header("Filter Analisis")
+    st.sidebar.header("🎯 Filter Analisis")
     
     nama_opts = sorted(df_pakai['Nama Material'].unique().astype(str))
-    sel_nama = st.sidebar.multiselect("Nama Material", nama_opts, default=[])
+    sel_nama = st.sidebar.multiselect("📦 Nama Material", nama_opts, default=[])
     
     kode_opts = sorted(df_pakai['Kode Material'].unique().astype(str))
-    sel_kode = st.sidebar.multiselect("Kode Material", kode_opts, default=[])
+    sel_kode = st.sidebar.multiselect("🔢 Kode Material", kode_opts, default=[])
     
     gudang_opts = sorted(df_pakai['Gudang'].unique().astype(str)) if 'Gudang' in df_pakai.columns else []
-    sel_gudang = st.sidebar.multiselect("Gudang", gudang_opts, default=[])
+    sel_gudang = st.sidebar.multiselect("🏢 Gudang", gudang_opts, default=[])
     
     jobtype_opts = sorted(df_pakai['JobType'].unique().astype(str)) if 'JobType' in df_pakai.columns else []
-    sel_jobtype = st.sidebar.multiselect("JobType", jobtype_opts, default=[])
+    sel_jobtype = st.sidebar.multiselect("📋 JobType", jobtype_opts, default=[])
     
     tahun_opts = sorted(df_pakai['Tahun'].astype(str).unique())
-    sel_tahun = st.sidebar.multiselect("Tahun", tahun_opts, default=[])
+    sel_tahun = st.sidebar.multiselect("📅 Tahun", tahun_opts, default=[])
     
-    periode_opts = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember']
-    sel_periode = st.sidebar.multiselect("Periode (Bulan)", periode_opts, default=[])
+    periode_opts = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Ags','Sep','Okt','Nov','Des']
+    sel_periode = st.sidebar.multiselect("🗓️ Bulan", periode_opts, default=[])
     
     jenis_opts = sorted(df_pakai['Jenis'].unique().astype(str))
-    sel_jenis = st.sidebar.multiselect("Jenis Material", jenis_opts, default=[])
+    sel_jenis = st.sidebar.multiselect("⚙️ Jenis Material", jenis_opts, default=[])
 
     # ==== FILTER DATA ====
     f = df_pakai.copy()
@@ -415,81 +450,254 @@ def page_analisis():
     if sel_periode: f = f[f['Periode'].astype(str).isin(sel_periode)]
     if sel_jenis: f = f[f['Jenis'].astype(str).isin(sel_jenis)]
 
-    # ==== KPI ====
-    st.subheader("📈 Ringkasan Pemakaian")
+    # ==== KPI CARDS ====
+    st.markdown("<div class='section-title'>📈 Ringkasan Pemakaian</div>", unsafe_allow_html=True)
+    
     k1,k2,k3,k4 = st.columns(4)
-    k1.metric("Total Transaksi", len(f))
-    k2.metric("Total Keluar", f"{f['Keluar'].sum():,.0f}")
-    k3.metric("Total Masuk", f"{f['Masuk'].sum():,.0f}")
-    if 'TOTAL' in f.columns:
-        k4.metric("Total Cost", f"Rp {f['TOTAL'].sum():,.0f}")
-    else:
-        k4.metric("Total Cost", "N/A")
+    with k1:
+        st.markdown(f"""
+        <div class='kpi-card'>
+            <p>📋 Total Transaksi</p>
+            <h2>{len(f):,}</h2>
+        </div>
+        """, unsafe_allow_html=True)
+    with k2:
+        st.markdown(f"""
+        <div class='kpi-card'>
+            <p>📤 Total Keluar</p>
+            <h2>{f['Keluar'].sum():,.0f}</h2>
+        </div>
+        """, unsafe_allow_html=True)
+    with k3:
+        st.markdown(f"""
+        <div class='kpi-card'>
+            <p>📥 Total Masuk</p>
+            <h2>{f['Masuk'].sum():,.0f}</h2>
+        </div>
+        """, unsafe_allow_html=True)
+    with k4:
+        total_cost = f['TOTAL'].sum() if 'TOTAL' in f.columns else 0
+        st.markdown(f"""
+        <div class='kpi-card'>
+            <p>💰 Total Cost</p>
+            <h2>Rp {total_cost:,.0f}</h2>
+        </div>
+        """, unsafe_allow_html=True)
     
-    st.markdown("---")
+    st.markdown("<br>", unsafe_allow_html=True)
 
-    # ==== GRAFIK 1: TOP 10 INBOUND & OUTBOUND (GABUNG) ====
-    st.subheader("📥📤 TOP 10 Material: Inbound vs Outbound")
+    # ==== 1. TOP 10 INBOUND VS OUTBOUND ====
+    st.markdown("<div class='section-title'>📥📤 TOP 10 Material: Inbound vs Outbound</div>", unsafe_allow_html=True)
     
-    # Top 10 berdasarkan total aktivitas (Masuk + Keluar)
     top_10 = f.groupby('Nama Material').agg(Masuk=('Masuk','sum'), Keluar=('Keluar','sum')).sum(axis=1).nlargest(10).index.tolist()
     top_data = f[f['Nama Material'].isin(top_10)]
     agg = top_data.groupby('Nama Material').agg(Masuk=('Masuk','sum'), Keluar=('Keluar','sum')).reset_index()
-    agg = agg.sort_values('Masuk', ascending=True)  # biar horizontal bar terurut
+    agg = agg.sort_values('Masuk', ascending=True)
     
     if not agg.empty:
-        fig_inout = go.Figure()
-        fig_inout.add_trace(go.Bar(y=agg['Nama Material'], x=agg['Masuk'], name='Masuk',
-                                   orientation='h', marker=dict(color='#4B8BBE'), text=agg['Masuk'].round(0), textposition='outside'))
-        fig_inout.add_trace(go.Bar(y=agg['Nama Material'], x=agg['Keluar'], name='Keluar',
-                                   orientation='h', marker=dict(color='#E67E22'), text=agg['Keluar'].round(0), textposition='outside'))
-        fig_inout.update_layout(barmode='group', height=400, margin=dict(l=200, r=40, t=30, b=80),
-                                legend=dict(orientation='h', yanchor='bottom', y=-0.3, xanchor='center', x=0.5),
-                                xaxis_title='Quantity')
-        st.plotly_chart(fig_inout, use_container_width=True)
+        fig1 = go.Figure()
+        fig1.add_trace(go.Bar(y=agg['Nama Material'], x=agg['Masuk'], name='Inbound (Masuk)',
+                              orientation='h', marker=dict(color='#4B8BBE', line=dict(color='#2E6B9E', width=1)),
+                              text=agg['Masuk'].apply(lambda x: f'{x:,.0f}'), textposition='outside',
+                              hovertemplate='<b>%{y}</b><br>Masuk: %{x:,.0f}<extra></extra>'))
+        fig1.add_trace(go.Bar(y=agg['Nama Material'], x=agg['Keluar'], name='Outbound (Keluar)',
+                              orientation='h', marker=dict(color='#E67E22', line=dict(color='#C0651E', width=1)),
+                              text=agg['Keluar'].apply(lambda x: f'{x:,.0f}'), textposition='outside',
+                              hovertemplate='<b>%{y}</b><br>Keluar: %{x:,.0f}<extra></extra>'))
+        fig1.update_layout(
+            barmode='group', height=400,
+            margin=dict(l=200, r=80, t=30, b=60),
+            legend=dict(orientation='h', yanchor='bottom', y=-0.25, xanchor='center', x=0.5,
+                       bgcolor='rgba(255,255,255,0.8)', bordercolor='#ddd', borderwidth=1),
+            plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
+            xaxis=dict(title='Quantity', gridcolor='#f0f0f0'),
+            yaxis=dict(title='')
+        )
+        st.plotly_chart(fig1, use_container_width=True, config={'displayModeBar': False})
     else:
         st.info("Data tidak cukup.")
-    
-    st.markdown("---")
 
-    # ==== GRAFIK 2: TREN BULANAN ====
-    st.subheader("📈 Tren Pemakaian Bulanan")
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # ==== 2. TREN PEMAKAIAN MATERIAL ====
+    st.markdown("<div class='section-title'>📈 Tren Pemakaian Material</div>", unsafe_allow_html=True)
+    
     if 'BulanStr' in f.columns:
         trend = f.groupby('BulanStr').agg(Masuk=('Masuk','sum'), Keluar=('Keluar','sum')).reset_index()
+        trend = trend.sort_values('BulanStr')
+        
         if not trend.empty and (trend['Masuk'].sum() > 0 or trend['Keluar'].sum() > 0):
-            fig_trend = go.Figure()
-            fig_trend.add_trace(go.Scatter(x=trend['BulanStr'], y=trend['Masuk'], mode='lines+markers',
-                                           name='Masuk', line=dict(color='#4B8BBE', width=2)))
-            fig_trend.add_trace(go.Scatter(x=trend['BulanStr'], y=trend['Keluar'], mode='lines+markers',
-                                           name='Keluar', line=dict(color='#E67E22', width=2)))
-            fig_trend.update_layout(height=400, xaxis_title='Bulan', yaxis_title='Quantity',
-                                    legend=dict(orientation='h', yanchor='bottom', y=-0.3, xanchor='center', x=0.5))
-            st.plotly_chart(fig_trend, use_container_width=True)
+            fig2 = go.Figure()
+            fig2.add_trace(go.Scatter(x=trend['BulanStr'], y=trend['Masuk'], mode='lines+markers',
+                                      name='Inbound (Masuk)',
+                                      line=dict(color='#4B8BBE', width=3),
+                                      marker=dict(size=8, color='#4B8BBE', line=dict(color='white', width=2)),
+                                      hovertemplate='<b>%{x}</b><br>Masuk: %{y:,.0f}<extra></extra>'))
+            fig2.add_trace(go.Scatter(x=trend['BulanStr'], y=trend['Keluar'], mode='lines+markers',
+                                      name='Outbound (Keluar)',
+                                      line=dict(color='#E67E22', width=3),
+                                      marker=dict(size=8, color='#E67E22', line=dict(color='white', width=2)),
+                                      hovertemplate='<b>%{x}</b><br>Keluar: %{y:,.0f}<extra></extra>'))
+            fig2.update_layout(
+                height=400, xaxis_title='Periode (Bulan-Tahun)', yaxis_title='Quantity',
+                legend=dict(orientation='h', yanchor='bottom', y=-0.25, xanchor='center', x=0.5,
+                           bgcolor='rgba(255,255,255,0.8)', bordercolor='#ddd', borderwidth=1),
+                plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
+                xaxis=dict(gridcolor='#f0f0f0', tickangle=-45),
+                yaxis=dict(gridcolor='#f0f0f0')
+            )
+            st.plotly_chart(fig2, use_container_width=True, config={'displayModeBar': False})
         else:
             st.info("Data tren tidak cukup.")
     else:
         st.info("Data tanggal tidak tersedia.")
-    
-    st.markdown("---")
 
-    # ==== GRAFIK 3: COST TOP 10 ====
-    st.subheader("💰 TOP 10 Cost Material")
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # ==== 3. COST ANALYSIS ====
+    st.markdown("<div class='section-title'>💰 TOP 10 Cost Material</div>", unsafe_allow_html=True)
+    
     if 'TOTAL' in f.columns and f['TOTAL'].sum() > 0:
         top_cost = f.groupby('Nama Material')['TOTAL'].sum().nlargest(10).reset_index()
         top_cost = top_cost.sort_values('TOTAL', ascending=True)
-        fig_cost = go.Figure()
-        fig_cost.add_trace(go.Bar(y=top_cost['Nama Material'], x=top_cost['TOTAL'], orientation='h',
-                                  marker=dict(color='#27AE60'), text=top_cost['TOTAL'].apply(lambda x: f'Rp {x:,.0f}'),
-                                  textposition='outside'))
-        fig_cost.update_layout(height=380, margin=dict(l=200, r=80, t=30, b=20), xaxis_title='Total Cost')
-        st.plotly_chart(fig_cost, use_container_width=True)
+        
+        fig3 = go.Figure()
+        fig3.add_trace(go.Bar(y=top_cost['Nama Material'], x=top_cost['TOTAL'], orientation='h',
+                              marker=dict(color='#27AE60', line=dict(color='#1E8449', width=1)),
+                              text=top_cost['TOTAL'].apply(lambda x: f'Rp {x:,.0f}'), textposition='outside',
+                              hovertemplate='<b>%{y}</b><br>Total Cost: Rp %{x:,.0f}<extra></extra>'))
+        fig3.update_layout(
+            height=380, margin=dict(l=200, r=100, t=30, b=20),
+            plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
+            xaxis=dict(title='Total Cost (Rp)', gridcolor='#f0f0f0'),
+            yaxis=dict(title='')
+        )
+        st.plotly_chart(fig3, use_container_width=True, config={'displayModeBar': False})
     else:
-        st.info("Data TOTAL (kolom P) tidak tersedia.")
-    
-    st.markdown("---")
+        st.info("Data TOTAL (kolom P) tidak tersedia. Pastikan kolom P berisi Total Biaya = Keluar × Harga Satuan.")
 
-    # ==== TABEL DETAIL ====
-    st.subheader("📋 Detail Pemakaian Material")
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # ==== 4. STOCK OUT RISK ====
+    st.markdown("<div class='section-title'>⚠️ Stock Out Risk & Lead Time</div>", unsafe_allow_html=True)
+    
+    try:
+        if not df_stock.empty and m1 is not None and 'pltd' in m1.columns and 'kode_material' in m1.columns:
+            risk = df_stock[df_stock['Jenis']=='Preventive'].copy()
+            risk['PLTD'] = risk['PLTD'].astype(str).str.strip().str.upper()
+            risk['Kode Material'] = risk['Kode Material'].astype(str).str.strip().str.upper()
+            
+            m1c = m1[['pltd','kode_material','keb_aktual']].copy()
+            m1c['pltd'] = m1c['pltd'].astype(str).str.strip().str.upper()
+            m1c['kode_material'] = m1c['kode_material'].astype(str).str.strip().str.upper()
+            
+            risk = risk.merge(m1c, left_on=['PLTD','Kode Material'], right_on=['pltd','kode_material'], how='left')
+            
+            risk['Sisa Hari'] = np.where(
+                risk['keb_aktual'].notna() & (risk['keb_aktual']>0),
+                risk['Qty'] / risk['keb_aktual'] * 30.5, np.nan)
+            
+            durasi = pd.Series(14, index=risk.index)
+            if m2 is not None and 'pltd' in m2.columns and 'durasi_kirim' in m2.columns:
+                m2c = m2[['pltd','durasi_kirim']].copy()
+                m2c['pltd'] = m2c['pltd'].astype(str).str.strip().str.upper()
+                if 'PLTD' in risk.columns:
+                    risk = risk.merge(m2c, on='PLTD', how='left')
+                    durasi = risk['durasi_kirim'].fillna(14)
+            
+            risk['Status'] = np.where(
+                risk['Sisa Hari'].isna(), 'Unknown',
+                np.where(risk['Sisa Hari'] < durasi, '🔴 Critical',
+                         np.where(risk['Sisa Hari'] < 1.5*durasi, '🟡 Warning', '🟢 Aman')))
+            
+            rc = risk['Status'].value_counts().reset_index()
+            rc.columns = ['Status','Count']
+            colors = {'🔴 Critical':'#E74C3C','🟡 Warning':'#F39C12','🟢 Aman':'#27AE60','Unknown':'#95A5A6'}
+            
+            fig4 = go.Figure()
+            for status in ['🔴 Critical','🟡 Warning','🟢 Aman','Unknown']:
+                subset = rc[rc['Status']==status]
+                if not subset.empty:
+                    fig4.add_trace(go.Bar(x=[status], y=subset['Count'], name=status,
+                                          marker=dict(color=colors.get(status, '#999'), line=dict(color='white', width=2)),
+                                          text=subset['Count'].values, textposition='outside'))
+            
+            fig4.update_layout(
+                height=350, xaxis_title='', yaxis_title='Jumlah Material',
+                showlegend=False,
+                plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
+                yaxis=dict(gridcolor='#f0f0f0'),
+                margin=dict(l=50, r=30, t=30, b=50)
+            )
+            st.plotly_chart(fig4, use_container_width=True, config={'displayModeBar': False})
+        else:
+            st.info("Data untuk analisis risiko tidak tersedia.")
+    except Exception as e:
+        st.warning(f"Stock Out Risk: data tidak cukup. ({e})")
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # ==== 5. PLAN VS AKTUAL ====
+    st.markdown("<div class='section-title'>📊 Plan vs Aktual</div>", unsafe_allow_html=True)
+    
+    try:
+        if not df_stock.empty and m1 is not None and 'pltd' in m1.columns and 'kode_material' in m1.columns:
+            pva = df_stock[df_stock['Jenis']=='Preventive'].copy()
+            pva['PLTD'] = pva['PLTD'].astype(str).str.strip().str.upper()
+            pva['Kode Material'] = pva['Kode Material'].astype(str).str.strip().str.upper()
+            
+            cols_need = ['pltd','kode_material','keb_aktual']
+            if 'keb_pm' in m1.columns: cols_need.append('keb_pm')
+            m1c = m1[cols_need].copy()
+            m1c['pltd'] = m1c['pltd'].astype(str).str.strip().str.upper()
+            m1c['kode_material'] = m1c['kode_material'].astype(str).str.strip().str.upper()
+            
+            pva = pva.merge(m1c, left_on=['PLTD','Kode Material'], right_on=['pltd','kode_material'], how='left')
+            
+            if 'keb_pm' in pva.columns:
+                pva_agg = pva.groupby('Nama Material').agg(keb_pm=('keb_pm','sum'), keb_aktual=('keb_aktual','sum')).reset_index()
+                pva_agg = pva_agg[pva_agg['keb_pm'] > 0].head(8)
+                if not pva_agg.empty:
+                    pva_agg = pva_agg.sort_values('keb_pm', ascending=True)
+                    fig5 = go.Figure()
+                    fig5.add_trace(go.Bar(y=pva_agg['Nama Material'], x=pva_agg['keb_pm'], name='Plan (PM)',
+                                          orientation='h', marker=dict(color='#3498DB', line=dict(color='#2471A3', width=1)),
+                                          text=pva_agg['keb_pm'].apply(lambda x: f'{x:,.0f}'), textposition='outside'))
+                    fig5.add_trace(go.Bar(y=pva_agg['Nama Material'], x=pva_agg['keb_aktual'], name='Aktual',
+                                          orientation='h', marker=dict(color='#E74C3C', line=dict(color='#B03A2E', width=1)),
+                                          text=pva_agg['keb_aktual'].apply(lambda x: f'{x:,.0f}'), textposition='outside'))
+                    fig5.update_layout(
+                        barmode='group', height=380,
+                        margin=dict(l=200, r=80, t=30, b=60),
+                        legend=dict(orientation='h', yanchor='bottom', y=-0.25, xanchor='center', x=0.5,
+                                   bgcolor='rgba(255,255,255,0.8)', bordercolor='#ddd', borderwidth=1),
+                        plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
+                        xaxis=dict(title='Quantity', gridcolor='#f0f0f0'),
+                        yaxis=dict(title='')
+                    )
+                    st.plotly_chart(fig5, use_container_width=True, config={'displayModeBar': False})
+                else:
+                    st.info("Data plan vs aktual tidak cukup.")
+            else:
+                pva_agg = pva.groupby('Nama Material').agg(keb_aktual=('keb_aktual','sum')).reset_index()
+                pva_agg = pva_agg[pva_agg['keb_aktual'] > 0].head(8).sort_values('keb_aktual', ascending=True)
+                if not pva_agg.empty:
+                    fig5 = go.Figure()
+                    fig5.add_trace(go.Bar(y=pva_agg['Nama Material'], x=pva_agg['keb_aktual'], name='Aktual',
+                                          orientation='h', marker=dict(color='#E74C3C', line=dict(color='#B03A2E', width=1)),
+                                          text=pva_agg['keb_aktual'].apply(lambda x: f'{x:,.0f}'), textposition='outside'))
+                    fig5.update_layout(height=380, margin=dict(l=200, r=80, t=30, b=20),
+                                      plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
+                    st.plotly_chart(fig5, use_container_width=True, config={'displayModeBar': False})
+        else:
+            st.info("Data master tidak tersedia.")
+    except Exception as e:
+        st.warning(f"Plan vs Aktual: data tidak cukup. ({e})")
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # ==== 6. TABEL DETAIL ====
+    st.markdown("<div class='section-title'>📋 Detail Pemakaian Material</div>", unsafe_allow_html=True)
     cols = ['Tanggal','Nama Material','Kode Material','Masuk','Keluar','Stok','Gudang','Keterangan','Transaksi','JobType','Jenis']
     if 'TOTAL' in f.columns:
         f = f.rename(columns={'TOTAL': 'Cost Total'})
