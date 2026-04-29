@@ -23,7 +23,51 @@ st.markdown("""
     [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 { color: #FFFFFF !important; }
     div[data-testid="stMetricValue"] { font-size: 28px; font-weight: 800; color: #0A2540; }
     .stPlotlyChart { background: white; border-radius: 10px; padding: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
-    [data-testid="stDataFrame"] { background: white; border-radius: 10px; padding: 8px; }
+    
+    /* Tabel kustom */
+    .table-container {
+        width: 100%;
+        overflow-x: auto;
+        background: white;
+        border-radius: 10px;
+        padding: 12px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        max-height: 450px;
+        overflow-y: auto;
+    }
+    .table-container table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 14px;
+    }
+    .table-container th {
+        background-color: #0A2540;
+        color: white !important;
+        padding: 10px 8px;
+        text-align: center !important;
+        position: sticky;
+        top: 0;
+        z-index: 2;
+    }
+    .table-container td {
+        padding: 8px;
+        border-bottom: 1px solid #E0E0E0;
+        text-align: center !important;
+    }
+    .table-container td.col-left {
+        text-align: left !important;
+    }
+    .table-container th.col-left {
+        text-align: left !important;
+    }
+    .table-container tr:hover {
+        background-color: #F5F5F5;
+    }
+    .highlight-red {
+        background-color: #ffcccc !important;
+        color: #cc0000 !important;
+        font-weight: bold;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -179,28 +223,48 @@ def load_all():
 
     return res
 
-# ======================== STYLING HELPER ========================
-def style_dataframe(df, pinned_cols=2):
-    """
-    Styling: 
-    - Kolom pertama (0) & kedua (1) = rata kiri
-    - Kolom lainnya = rata tengah
-    """
-    n_cols = len(df.columns)
-    props_left = 'text-align: left;'
-    props_center = 'text-align: center;'
+# ======================== HTML TABLE RENDERER ========================
+def render_html_table(df, highlight_cols=None):
+    """Render DataFrame as HTML with center-aligned values and left-aligned first 2 cols."""
+    if df.empty:
+        return "<p>Tidak ada data.</p>"
     
-    def styler(row):
-        styles = []
-        for i in range(n_cols):
-            if i < pinned_cols:
-                styles.append(props_left)
+    cols = df.columns.tolist()
+    html = '<div class="table-container"><table><thead><tr>'
+    
+    # Header
+    for i, col in enumerate(cols):
+        cls = 'col-left' if i < 2 else ''
+        html += f'<th class="{cls}">{col}</th>'
+    html += '</tr></thead><tbody>'
+    
+    # Body
+    for _, row in df.iterrows():
+        html += '<tr>'
+        for i, col in enumerate(cols):
+            val = row[col]
+            cls = 'col-left' if i < 2 else ''
+            
+            # Format angka
+            if isinstance(val, float) and not pd.isna(val):
+                display = f"{val:,.1f}" if col not in ('Kode Material','Nama Material') else str(val)
             else:
-                styles.append(props_center)
-        return styles
+                display = str(val)
+            
+            # Highlight merah untuk nilai ≤ 1.5
+            if highlight_cols and col in highlight_cols:
+                try:
+                    num_val = float(val)
+                    if 0 < num_val <= 1.5:
+                        cls += ' highlight-red'
+                except:
+                    pass
+            
+            html += f'<td class="{cls}">{display}</td>'
+        html += '</tr>'
     
-    styled = df.style.apply(lambda _: [props_left if i < pinned_cols else props_center for i in range(n_cols)], axis=1)
-    return styled
+    html += '</tbody></table></div>'
+    return html
 
 # ======================== HOME ========================
 def home():
@@ -266,10 +330,8 @@ def page_stock():
         p = p.reset_index()
         pltd_cols = [c for c in p.columns if c not in ('Kode Material','Nama Material','WH Cikande','Total')]
         p = p[['Kode Material','Nama Material'] + pltd_cols + ['WH Cikande','Total']]
-        cfg = {'Kode Material':st.column_config.TextColumn(pinned=True),
-               'Nama Material':st.column_config.TextColumn(pinned=True)}
-        styled_p = style_dataframe(p)
-        st.dataframe(styled_p, column_config=cfg, use_container_width=True, hide_index=True, height=400)
+        html = render_html_table(p)
+        st.markdown(html, unsafe_allow_html=True)
     else:
         st.info("Tidak ada data Preventive.")
 
@@ -305,21 +367,8 @@ def page_stock():
             mask = (sp[pltd_cols_s] > 0) & (sp[pltd_cols_s] <= 1.5)
             sp = sp[mask.any(axis=1)]
 
-        cfg_s = {
-            'Kode Material': st.column_config.TextColumn(pinned=True),
-            'Nama Material': st.column_config.TextColumn(pinned=True),
-        }
-        for col in pltd_cols_s:
-            cfg_s[col] = st.column_config.NumberColumn(format="%.1f")
-        
-        def highlight_low(val):
-            if isinstance(val, (int, float)) and val > 0 and val <= 1.5:
-                return 'background-color: #ffcccc; color: #cc0000; font-weight: bold;'
-            return ''
-        
-        styled_sp = sp.style.map(highlight_low, subset=pltd_cols_s)
-        styled_sp = style_dataframe(sp)  # tambahan styling rata tengah
-        st.dataframe(styled_sp, column_config=cfg_s, use_container_width=True, hide_index=True, height=400)
+        html = render_html_table(sp, highlight_cols=pltd_cols_s)
+        st.markdown(html, unsafe_allow_html=True)
         
     else:
         st.info("Data Sisa Bulan tidak tersedia (periksa sheet Master data 1).")
@@ -334,10 +383,8 @@ def page_stock():
         p = p.reset_index()
         pltd_cols = [c for c in p.columns if c not in ('Kode Material','Nama Material','WH Cikande','Total')]
         p = p[['Kode Material','Nama Material'] + pltd_cols + ['WH Cikande','Total']]
-        cfg = {'Kode Material':st.column_config.TextColumn(pinned=True),
-               'Nama Material':st.column_config.TextColumn(pinned=True)}
-        styled_corr = style_dataframe(p)
-        st.dataframe(styled_corr, column_config=cfg, use_container_width=True, hide_index=True, height=400)
+        html = render_html_table(p)
+        st.markdown(html, unsafe_allow_html=True)
     else:
         st.info("Tidak ada data Corrective.")
 
