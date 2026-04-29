@@ -23,48 +23,7 @@ st.markdown("""
     [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 { color: #FFFFFF !important; }
     div[data-testid="stMetricValue"] { font-size: 28px; font-weight: 800; color: #0A2540; }
     .stPlotlyChart { background: white; border-radius: 10px; padding: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
-    
-    .table-container {
-        width: 100%;
-        overflow-x: auto;
-        background: white;
-        border-radius: 10px;
-        padding: 12px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-    }
-    .table-container table {
-        width: 100%;
-        border-collapse: collapse;
-        font-size: 14px;
-    }
-    .table-container th {
-        background-color: #0A2540;
-        color: white !important;
-        padding: 10px 8px;
-        text-align: center !important;
-        position: sticky;
-        top: 0;
-        z-index: 2;
-    }
-    .table-container td {
-        padding: 8px;
-        border-bottom: 1px solid #E0E0E0;
-        text-align: center !important;
-    }
-    .table-container td.col-left {
-        text-align: left !important;
-    }
-    .table-container th.col-left {
-        text-align: left !important;
-    }
-    .table-container tr:hover {
-        background-color: #F5F5F5;
-    }
-    .highlight-red {
-        background-color: #ffcccc !important;
-        color: #cc0000 !important;
-        font-weight: bold;
-    }
+    [data-testid="stDataFrame"] { background: white; border-radius: 10px; padding: 8px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -220,54 +179,6 @@ def load_all():
 
     return res
 
-# ======================== HTML TABLE RENDERER ========================
-def render_html_table(df, highlight_cols=None, is_qty_table=False):
-    """Render DataFrame as HTML with center values, left-align first 2 cols."""
-    if df.empty:
-        return "<p>Tidak ada data.</p>"
-    
-    cols = df.columns.tolist()
-    html = '<div class="table-container"><table><thead><tr>'
-    
-    for i, col in enumerate(cols):
-        cls = 'col-left' if i < 2 else ''
-        html += f'<th class="{cls}">{col}</th>'
-    html += '</tr></thead><tbody>'
-    
-    for _, row in df.iterrows():
-        html += '<tr>'
-        for i, col in enumerate(cols):
-            val = row[col]
-            cls = 'col-left' if i < 2 else ''
-            
-            # Format angka
-            if isinstance(val, float) and not pd.isna(val):
-                if is_qty_table:
-                    # Bulatkan Qty (0 desimal)
-                    display = f"{val:,.0f}"
-                else:
-                    # Sisa Bulan (1 desimal)
-                    display = f"{val:,.1f}"
-            elif isinstance(val, int):
-                display = f"{val:,}"
-            else:
-                display = str(val)
-            
-            # Highlight merah untuk Sisa Bulan ≤ 1.5
-            if highlight_cols and col in highlight_cols:
-                try:
-                    num_val = float(val)
-                    if 0 < num_val <= 1.5:
-                        cls += ' highlight-red'
-                except:
-                    pass
-            
-            html += f'<td class="{cls}">{display}</td>'
-        html += '</tr>'
-    
-    html += '</tbody></table></div>'
-    return html
-
 # ======================== HOME ========================
 def home():
     st.title("⚡ Dashboard Stok & Logistik PLTD")
@@ -322,11 +233,10 @@ def page_stock():
 
     m1 = data['m1']
 
-    # ==== 1. TABEL PREVENTIVE (QTY) — BULAT ====
+    # ==== 1. TABEL PREVENTIVE (QTY) ====
     st.subheader("🔵 Material Preventive")
     if not prev.empty:
         p = prev.pivot_table(index=['Kode Material','Nama Material'], columns='PLTD', values='Qty', aggfunc='sum', fill_value=0)
-        # Bulatkan semua nilai Qty
         p = p.round(0).astype(int)
         cik_p = prev.groupby(['Kode Material','Nama Material'])['WH Cikande'].max().round(0).astype(int)
         p = p.join(cik_p)
@@ -334,8 +244,9 @@ def page_stock():
         p = p.reset_index()
         pltd_cols = [c for c in p.columns if c not in ('Kode Material','Nama Material','WH Cikande','Total')]
         p = p[['Kode Material','Nama Material'] + pltd_cols + ['WH Cikande','Total']]
-        html = render_html_table(p, is_qty_table=True)
-        st.markdown(html, unsafe_allow_html=True)
+        cfg = {'Kode Material':st.column_config.TextColumn(pinned=True),
+               'Nama Material':st.column_config.TextColumn(pinned=True)}
+        st.dataframe(p, column_config=cfg, use_container_width=True, hide_index=True)
     else:
         st.info("Tidak ada data Preventive.")
 
@@ -371,17 +282,28 @@ def page_stock():
             mask = (sp[pltd_cols_s] > 0) & (sp[pltd_cols_s] <= 1.5)
             sp = sp[mask.any(axis=1)]
 
-        html = render_html_table(sp, highlight_cols=pltd_cols_s, is_qty_table=False)
-        st.markdown(html, unsafe_allow_html=True)
+        cfg_s = {
+            'Kode Material': st.column_config.TextColumn(pinned=True),
+            'Nama Material': st.column_config.TextColumn(pinned=True),
+        }
+        for col in pltd_cols_s:
+            cfg_s[col] = st.column_config.NumberColumn(format="%.1f")
+        
+        def highlight_low(val):
+            if isinstance(val, (int, float)) and val > 0 and val <= 1.5:
+                return 'background-color: #ffcccc; color: #cc0000; font-weight: bold;'
+            return ''
+        
+        styled_sp = sp.style.map(highlight_low, subset=pltd_cols_s)
+        st.dataframe(styled_sp, column_config=cfg_s, use_container_width=True, hide_index=True)
         
     else:
         st.info("Data Sisa Bulan tidak tersedia (periksa sheet Master data 1).")
 
-    # ==== 3. CORRECTIVE — BULAT ====
+    # ==== 3. CORRECTIVE ====
     st.subheader("🟠 Material Corrective")
     if not corr.empty:
         p = corr.pivot_table(index=['Kode Material','Nama Material'], columns='PLTD', values='Qty', aggfunc='sum', fill_value=0)
-        # Bulatkan semua nilai Qty
         p = p.round(0).astype(int)
         cik_c = corr.groupby(['Kode Material','Nama Material'])['WH Cikande'].max().round(0).astype(int)
         p = p.join(cik_c)
@@ -389,8 +311,9 @@ def page_stock():
         p = p.reset_index()
         pltd_cols = [c for c in p.columns if c not in ('Kode Material','Nama Material','WH Cikande','Total')]
         p = p[['Kode Material','Nama Material'] + pltd_cols + ['WH Cikande','Total']]
-        html = render_html_table(p, is_qty_table=True)
-        st.markdown(html, unsafe_allow_html=True)
+        cfg = {'Kode Material':st.column_config.TextColumn(pinned=True),
+               'Nama Material':st.column_config.TextColumn(pinned=True)}
+        st.dataframe(p, column_config=cfg, use_container_width=True, hide_index=True)
     else:
         st.info("Tidak ada data Corrective.")
 
