@@ -485,11 +485,32 @@ def page_analisis():
     
     st.markdown("---")
 
-    # ==== 3. COST ANALYSIS (TOTAL = Keluar × Harga) ====
+    # ==== 3. COST ANALYSIS (HITUNG MANUAL: Keluar × Harga Satuan) ====
     st.subheader("💰 TOP 10 Cost Material")
     
-    # TOTAL di sheet Gabungan sudah = Keluar × Harga Satuan
-    if 'TOTAL' in f.columns and f['TOTAL'].sum() > 0:
+    # Cari kolom harga (mungkin 'HARGA D365' atau 'harga')
+    harga_col = None
+    for c in f.columns:
+        if 'harga' in c.lower():
+            harga_col = c
+            break
+    
+    if harga_col and 'Keluar' in f.columns:
+        f['Cost_Calc'] = f['Keluar'] * pd.to_numeric(f[harga_col], errors='coerce').fillna(0)
+        if f['Cost_Calc'].sum() > 0:
+            top_cost = f.groupby('Nama Material')['Cost_Calc'].sum().nlargest(10).reset_index()
+            top_cost = top_cost.sort_values('Cost_Calc', ascending=True)
+            
+            fig3 = go.Figure()
+            fig3.add_trace(go.Bar(y=top_cost['Nama Material'], x=top_cost['Cost_Calc'], orientation='h',
+                                  marker=dict(color='#27AE60'),
+                                  text=top_cost['Cost_Calc'].apply(lambda x: f'Rp {x:,.0f}'), textposition='outside'))
+            fig3.update_layout(height=380, margin=dict(l=200, r=100, t=30, b=20))
+            st.plotly_chart(fig3, use_container_width=True)
+        else:
+            st.info("Data cost tidak cukup.")
+    elif 'TOTAL' in f.columns and f['TOTAL'].sum() > 0:
+        # Fallback ke kolom TOTAL
         top_cost = f.groupby('Nama Material')['TOTAL'].sum().nlargest(10).reset_index()
         top_cost = top_cost.sort_values('TOTAL', ascending=True)
         
@@ -500,66 +521,91 @@ def page_analisis():
         fig3.update_layout(height=380, margin=dict(l=200, r=100, t=30, b=20))
         st.plotly_chart(fig3, use_container_width=True)
     else:
-        st.info("Data TOTAL (kolom P = Keluar × Harga) tidak tersedia.")
-    
-    st.markdown("---")
+        st.info("Data harga tidak tersedia untuk menghitung cost.")
 
     # ==== 4. STOCK OUT RISK ====
     st.subheader("⚠️ Stock Out Risk & Lead Time")
     
     try:
-        if not df_stock.empty and m1 is not None and 'pltd' in m1.columns and 'kode_material' in m1.columns and 'keb_aktual' in m1.columns:
-            risk = df_stock[df_stock['Jenis']=='Preventive'].copy()
-            risk['PLTD'] = risk['PLTD'].astype(str).str.strip().str.upper()
-            risk['Kode Material'] = risk['Kode Material'].astype(str).str.strip().str.upper()
+        if not df_stock.empty and m1 is not None:
+            # Cek kolom yang ada di m1
+            if 'pltd' not in m1.columns:
+                # Cari kolom yang mengandung 'pltd' atau 'nama'
+                pltd_col = next((c for c in m1.columns if 'pltd' in c.lower() or 'nama' in c.lower()), None)
+                if pltd_col:
+                    m1 = m1.rename(columns={pltd_col: 'pltd'})
             
-            m1c = m1[['pltd','kode_material','keb_aktual']].copy()
-            m1c['pltd'] = m1c['pltd'].astype(str).str.strip().str.upper()
-            m1c['kode_material'] = m1c['kode_material'].astype(str).str.strip().str.upper()
+            if 'kode_material' not in m1.columns:
+                kode_col = next((c for c in m1.columns if 'kode' in c.lower()), None)
+                if kode_col:
+                    m1 = m1.rename(columns={kode_col: 'kode_material'})
             
-            risk = risk.merge(m1c, left_on=['PLTD','Kode Material'], right_on=['pltd','kode_material'], how='left')
+            if 'keb_aktual' not in m1.columns:
+                aktual_col = next((c for c in m1.columns if 'aktual' in c.lower()), None)
+                if aktual_col:
+                    m1 = m1.rename(columns={aktual_col: 'keb_aktual'})
             
-            risk['Sisa Hari'] = np.where(
-                risk['keb_aktual'].notna() & (risk['keb_aktual']>0),
-                risk['Qty'] / risk['keb_aktual'] * 30.5, np.nan)
-            
-            # Tambah durasi_kirim
-            if m2 is not None and 'pltd' in m2.columns and 'durasi_kirim' in m2.columns:
-                m2c = m2[['pltd','durasi_kirim']].copy()
-                m2c['pltd'] = m2c['pltd'].astype(str).str.strip().str.upper()
-                if 'PLTD' in risk.columns:
-                    risk = risk.merge(m2c, on='PLTD', how='left')
-                    risk['durasi_kirim'] = risk['durasi_kirim'].fillna(14)
-                else:
-                    risk['durasi_kirim'] = 14
+            if 'pltd' in m1.columns and 'kode_material' in m1.columns and 'keb_aktual' in m1.columns:
+                risk = df_stock[df_stock['Jenis']=='Preventive'].copy()
+                risk['PLTD'] = risk['PLTD'].astype(str).str.strip().str.upper()
+                risk['Kode Material'] = risk['Kode Material'].astype(str).str.strip().str.upper()
+                
+                m1c = m1[['pltd','kode_material','keb_aktual']].copy()
+                m1c['pltd'] = m1c['pltd'].astype(str).str.strip().str.upper()
+                m1c['kode_material'] = m1c['kode_material'].astype(str).str.strip().str.upper()
+                
+                risk = risk.merge(m1c, left_on=['PLTD','Kode Material'], right_on=['pltd','kode_material'], how='left')
+                
+                risk['Sisa Hari'] = np.where(
+                    risk['keb_aktual'].notna() & (risk['keb_aktual']>0),
+                    risk['Qty'] / risk['keb_aktual'] * 30.5, np.nan)
+                
+                risk['durasi_kirim'] = 14  # default
+                
+                # Merge durasi dari m2 jika ada
+                if m2 is not None:
+                    if 'pltd' not in m2.columns:
+                        pltd_col2 = next((c for c in m2.columns if 'pltd' in c.lower() or 'nama' in c.lower()), None)
+                        if pltd_col2:
+                            m2 = m2.rename(columns={pltd_col2: 'pltd'})
+                    if 'durasi_kirim' not in m2.columns:
+                        dur_col = next((c for c in m2.columns if 'durasi' in c.lower()), None)
+                        if dur_col:
+                            m2 = m2.rename(columns={dur_col: 'durasi_kirim'})
+                    
+                    if 'pltd' in m2.columns and 'durasi_kirim' in m2.columns:
+                        m2c = m2[['pltd','durasi_kirim']].copy()
+                        m2c['pltd'] = m2c['pltd'].astype(str).str.strip().str.upper()
+                        risk = risk.merge(m2c, on='PLTD', how='left')
+                        risk['durasi_kirim'] = risk['durasi_kirim'].fillna(14)
+                    else:
+                        risk['durasi_kirim'] = 14
+                
+                risk['Status'] = np.where(
+                    risk['Sisa Hari'].isna(), 'Unknown',
+                    np.where(risk['Sisa Hari'] < risk['durasi_kirim'], '🔴 Critical',
+                             np.where(risk['Sisa Hari'] < 1.5*risk['durasi_kirim'], '🟡 Warning', '🟢 Aman')))
+                
+                rc = risk['Status'].value_counts().reset_index()
+                rc.columns = ['Status','Count']
+                
+                fig4 = go.Figure()
+                colors = {'🔴 Critical':'#E74C3C','🟡 Warning':'#F39C12','🟢 Aman':'#27AE60','Unknown':'#95A5A6'}
+                for status in ['🔴 Critical','🟡 Warning','🟢 Aman','Unknown']:
+                    subset = rc[rc['Status']==status]
+                    if not subset.empty:
+                        fig4.add_trace(go.Bar(x=[status], y=subset['Count'], name=status,
+                                              marker=dict(color=colors.get(status, '#999')),
+                                              text=subset['Count'].values, textposition='outside'))
+                fig4.update_layout(height=350, showlegend=False)
+                st.plotly_chart(fig4, use_container_width=True)
             else:
-                risk['durasi_kirim'] = 14
-            
-            risk['Status'] = np.where(
-                risk['Sisa Hari'].isna(), 'Unknown',
-                np.where(risk['Sisa Hari'] < risk['durasi_kirim'], '🔴 Critical',
-                         np.where(risk['Sisa Hari'] < 1.5*risk['durasi_kirim'], '🟡 Warning', '🟢 Aman')))
-            
-            rc = risk['Status'].value_counts().reset_index()
-            rc.columns = ['Status','Count']
-            
-            fig4 = go.Figure()
-            colors = {'🔴 Critical':'#E74C3C','🟡 Warning':'#F39C12','🟢 Aman':'#27AE60','Unknown':'#95A5A6'}
-            for status in ['🔴 Critical','🟡 Warning','🟢 Aman','Unknown']:
-                subset = rc[rc['Status']==status]
-                if not subset.empty:
-                    fig4.add_trace(go.Bar(x=[status], y=subset['Count'], name=status,
-                                          marker=dict(color=colors.get(status, '#999')),
-                                          text=subset['Count'].values, textposition='outside'))
-            fig4.update_layout(height=350, showlegend=False)
-            st.plotly_chart(fig4, use_container_width=True)
+                st.info(f"Kolom tidak lengkap di Master 1. Tersedia: {m1.columns.tolist()}")
         else:
             st.info("Data untuk analisis risiko tidak tersedia.")
     except Exception as e:
-        st.warning(f"Stock Out Risk: data tidak cukup. ({str(e)[:100]})")
-    
-    st.markdown("---")
-
+        st.warning(f"Stock Out Risk: {str(e)[:150]}")
+        
     # ==== 5. PLAN VS AKTUAL ====
     st.subheader("📊 Plan vs Aktual")
     
