@@ -252,17 +252,15 @@ def page_stock():
     # ==== 2. SISA BULAN PREVENTIVE ====
     st.subheader("⏳ Sisa Stok Preventive dalam Bulan")
 
-    # DEBUG: tampilkan info M1
-    if 'm1_raw_cols' in data:
-        with st.expander("Debug: Master 1 Info"):
-            st.write("Kolom asli M1:", data['m1_raw_cols'])
-            if m1 is not None:
-                st.write("Kolom setelah rename:", m1.columns.tolist())
-                st.write("Sample pltd:", m1['pltd'].unique()[:5] if 'pltd' in m1.columns else 'TIDAK ADA')
-                st.write("Sample kode_material:", m1['kode_material'].unique()[:5] if 'kode_material' in m1.columns else 'TIDAK ADA')
-                st.write("Sample keb_aktual:", m1['keb_aktual'].head() if 'keb_aktual' in m1.columns else 'TIDAK ADA')
-            else:
-                st.write("M1 adalah None")
+  # DEBUG: tampilkan info M1
+    with st.expander("Debug: Master 1 Info"):
+        st.write("Mencoba menampilkan data...")
+        if m1 is not None:
+            st.write("Kolom ditemukan:", m1.columns.tolist())
+            # Tambahkan baris ini untuk melihat data mentah
+            st.write("Data Mentah Master 1:", m1.head()) 
+        else:
+            st.write("Data M1 tidak terbaca (None)")
     if 'm1_error' in data:
         st.error(f"Error load M1: {data['m1_error']}")
 
