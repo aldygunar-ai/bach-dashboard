@@ -152,6 +152,7 @@ def load_all_data():
     # 2. Master Data
     try:
         sh = retry_gspread(client.open_by_key, MASTER_PLTD_ID)
+        # Master 1
         try:
             df1 = get_as_dataframe(sh.worksheet('Master data 1'), evaluate_formulas=True)
             df1.columns = df1.columns.str.strip()
@@ -162,16 +163,23 @@ def load_all_data():
             df1.rename(columns={k:v for k,v in rename.items() if k in df1.columns}, inplace=True)
             result['master1'] = df1
         except: pass
+        # Master 2
         try:
             df2 = get_as_dataframe(sh.worksheet('Master data 2'), evaluate_formulas=True)
             df2.columns = df2.columns.str.strip()
-            # Cari kolom yang mengandung 'PLTD' dan 'Durasi Kirim'
-            pltd_col = next((c for c in df2.columns if 'pltd' in c.lower()), None)
-            durasi_col = next((c for c in df2.columns if 'durasi kirim' in c.lower() and 'darat' in c.lower()), None)
-            if pltd_col:
-                df2.rename(columns={pltd_col: 'pltd'}, inplace=True)
-            if durasi_col:
-                df2.rename(columns={durasi_col: 'durasi_kirim'}, inplace=True)
+            # Rename dengan EXACT MATCH berdasarkan data user
+            exact_rename = {
+                'Nama PLTD': 'pltd',
+                'Durasi Kirim Darat+Laut (Hari)': 'durasi_kirim'
+            }
+            df2.rename(columns=exact_rename, inplace=True)
+            # Jika masih ada yang belum ter-rename, cari fallback
+            if 'pltd' not in df2.columns:
+                pltd_col = next((c for c in df2.columns if 'pltd' in c.lower()), None)
+                if pltd_col: df2.rename(columns={pltd_col: 'pltd'}, inplace=True)
+            if 'durasi_kirim' not in df2.columns:
+                dur_col = next((c for c in df2.columns if 'durasi' in c.lower() and 'darat' in c.lower()), None)
+                if dur_col: df2.rename(columns={dur_col: 'durasi_kirim'}, inplace=True)
             if 'durasi_kirim' in df2.columns:
                 df2['durasi_kirim'] = pd.to_numeric(df2['durasi_kirim'], errors='coerce').fillna(14)
             result['master2'] = df2
@@ -180,19 +188,27 @@ def load_all_data():
     except Exception as e:
         st.warning(f"Master sheet error: {e}")
 
-    # 3. Cikande (KOLOM C = Qty)
+    # 3. Cikande (AUTO-DETECT KOLOM DARI HEADER)
     try:
         sh = retry_gspread(client.open_by_key, MASTER_D365_ID)
         ws = sh.worksheet('Sheet1')
         data = ws.get_all_values()
         if len(data) >= 2:
+            header = [h.strip().lower() for h in data[0]]
+            # Cari index kolom: kode, nama, qty
+            idx_kode = next((i for i, h in enumerate(header) if 'kode' in h or 'code' in h or 'item' in h), 1)
+            idx_nama = next((i for i, h in enumerate(header) if 'nama' in h or 'name' in h or 'description' in h), 2)
+            idx_qty = next((i for i, h in enumerate(header) if 'qty' in h or 'quantity' in h or 'stock' in h or 'on hand' in h), 2)
+            # Jika tidak ketemu, fallback ke A=kode, B=nama, C=qty
+            if idx_kode == 1 and idx_nama == 2 and idx_qty == 2:
+                idx_kode, idx_nama, idx_qty = 0, 1, 2
             cik_rows = []
             for r in data[1:]:
-                if len(r) < 3: continue
-                kode = r[1].strip() if len(r) > 1 else ''
-                nama = r[2].strip() if len(r) > 2 else ''
-                qty_s = r[2].strip() if len(r) > 2 else '0'  # Kolom C = index 2
-                # Coba parse qty dari kolom C
+                max_idx = max(idx_kode, idx_nama, idx_qty)
+                if len(r) <= max_idx: continue
+                kode = r[idx_kode].strip() if idx_kode < len(r) else ''
+                nama = r[idx_nama].strip() if idx_nama < len(r) else ''
+                qty_s = r[idx_qty].strip() if idx_qty < len(r) else '0'
                 try:
                     qty = float(qty_s.replace(',', '')) if qty_s else 0.0
                 except:
@@ -203,7 +219,8 @@ def load_all_data():
             if not df_cik.empty:
                 df_cik = df_cik.groupby(['Kode Material', 'Nama Material'], as_index=False)['Qty Cikande'].sum()
             result['cikande'] = df_cik
-    except: pass
+    except Exception as e:
+        st.warning(f"Cikande error: {e}")
 
     # 4. Delivery
     try:
@@ -298,16 +315,16 @@ def page_stock():
     master1 = data['master1']
     master2 = data['master2']
 
+    # Merge master1
     if master1 is not None and 'pltd' in master1.columns and 'kode_material' in master1.columns:
         anal = prev.merge(master1[['pltd','kode_material','keb_aktual']],
                           left_on=['PLTD','Kode Material'], right_on=['pltd','kode_material'], how='left')
-        for c in ['pltd','kode_material']:
-            if c in anal.columns: anal.drop(columns=c, inplace=True)
+        anal.drop(columns=['pltd','kode_material'], inplace=True, errors='ignore')
     else:
         anal = prev.copy()
         anal['keb_aktual'] = np.nan
 
-    # Merge durasi_kirim dari master2
+    # Merge master2 (durasi_kirim)
     if master2 is not None and 'pltd' in master2.columns and 'durasi_kirim' in master2.columns:
         anal = anal.merge(master2[['pltd','durasi_kirim']], on='PLTD', how='left')
     else:
