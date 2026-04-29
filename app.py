@@ -24,21 +24,6 @@ st.markdown("""
     div[data-testid="stMetricValue"] { font-size: 28px; font-weight: 800; color: #0A2540; }
     .stPlotlyChart { background: white; border-radius: 10px; padding: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
     [data-testid="stDataFrame"] { background: white; border-radius: 10px; padding: 8px; }
-    
-    /* Rata tengah untuk SEMUA sel tabel (header + data) */
-    [data-testid="stDataFrame"] div[data-testid="stTable"] table thead th,
-    [data-testid="stDataFrame"] div[data-testid="stTable"] table tbody td {
-        text-align: center !important;
-        vertical-align: middle !important;
-    }
-    
-    /* Pinned columns (Kode & Nama Material) tetap rata kiri */
-    [data-testid="stDataFrame"] div[data-testid="stTable"] table tbody td:first-child,
-    [data-testid="stDataFrame"] div[data-testid="stTable"] table thead th:first-child,
-    [data-testid="stDataFrame"] div[data-testid="stTable"] table tbody td:nth-child(2),
-    [data-testid="stDataFrame"] div[data-testid="stTable"] table thead th:nth-child(2) {
-        text-align: left !important;
-    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -194,6 +179,29 @@ def load_all():
 
     return res
 
+# ======================== STYLING HELPER ========================
+def style_dataframe(df, pinned_cols=2):
+    """
+    Styling: 
+    - Kolom pertama (0) & kedua (1) = rata kiri
+    - Kolom lainnya = rata tengah
+    """
+    n_cols = len(df.columns)
+    props_left = 'text-align: left;'
+    props_center = 'text-align: center;'
+    
+    def styler(row):
+        styles = []
+        for i in range(n_cols):
+            if i < pinned_cols:
+                styles.append(props_left)
+            else:
+                styles.append(props_center)
+        return styles
+    
+    styled = df.style.apply(lambda _: [props_left if i < pinned_cols else props_center for i in range(n_cols)], axis=1)
+    return styled
+
 # ======================== HOME ========================
 def home():
     st.title("⚡ Dashboard Stok & Logistik PLTD")
@@ -260,7 +268,8 @@ def page_stock():
         p = p[['Kode Material','Nama Material'] + pltd_cols + ['WH Cikande','Total']]
         cfg = {'Kode Material':st.column_config.TextColumn(pinned=True),
                'Nama Material':st.column_config.TextColumn(pinned=True)}
-        st.dataframe(p, column_config=cfg, use_container_width=True, hide_index=True, height=400)
+        styled_p = style_dataframe(p)
+        st.dataframe(styled_p, column_config=cfg, use_container_width=True, hide_index=True, height=400)
     else:
         st.info("Tidak ada data Preventive.")
 
@@ -308,8 +317,9 @@ def page_stock():
                 return 'background-color: #ffcccc; color: #cc0000; font-weight: bold;'
             return ''
         
-        styled_df = sp.style.map(highlight_low, subset=pltd_cols_s)
-        st.dataframe(styled_df, column_config=cfg_s, use_container_width=True, hide_index=True, height=400)
+        styled_sp = sp.style.map(highlight_low, subset=pltd_cols_s)
+        styled_sp = style_dataframe(sp)  # tambahan styling rata tengah
+        st.dataframe(styled_sp, column_config=cfg_s, use_container_width=True, hide_index=True, height=400)
         
     else:
         st.info("Data Sisa Bulan tidak tersedia (periksa sheet Master data 1).")
@@ -326,7 +336,8 @@ def page_stock():
         p = p[['Kode Material','Nama Material'] + pltd_cols + ['WH Cikande','Total']]
         cfg = {'Kode Material':st.column_config.TextColumn(pinned=True),
                'Nama Material':st.column_config.TextColumn(pinned=True)}
-        st.dataframe(p, column_config=cfg, use_container_width=True, hide_index=True, height=400)
+        styled_corr = style_dataframe(p)
+        st.dataframe(styled_corr, column_config=cfg, use_container_width=True, hide_index=True, height=400)
     else:
         st.info("Tidak ada data Corrective.")
 
