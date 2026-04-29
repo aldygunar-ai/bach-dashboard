@@ -6,7 +6,6 @@ import plotly.graph_objects as go
 import gspread
 from gspread_dataframe import get_as_dataframe
 import re
-import time
 
 st.set_page_config(page_title="Dashboard PLTD Bach", page_icon="⚡", layout="wide")
 
@@ -179,7 +178,7 @@ def load_all():
         res['cik'] = dc
     except: pass
 
-    # PEMAKAIAN (SHEET GABUNGAN) - AMBIL KOLOM TOTAL (P)
+    # PEMAKAIAN (SHEET GABUNGAN)
     try:
         sh = cl.open_by_key(MASTER_GABUNGAN_ID)
         ws = sh.worksheet('Gabungan')
@@ -198,15 +197,17 @@ def load_all():
                 if len(r) < 2: continue
                 if not any(str(c).strip() for c in r[:5]): continue
                 tanggal = r[0].strip() if len(r) > 0 else ''
-                masuk = r[1].strip() if len(r) > 1 else '0'
-                keluar = r[2].strip() if len(r) > 2 else '0'
-                stok = r[3].strip() if len(r) > 3 else '0'
-                keterangan = r[4].strip() if len(r) > 4 else ''
-                transaksi = r[7].strip() if len(r) > 7 else ''
-                nama_material = r[8].strip() if len(r) > 8 else ''
-                jobtype = r[9].strip() if len(r) > 9 else ''
-                gudang = r[11].strip() if len(r) > 11 else ''
-                total = r[15].strip() if len(r) > 15 else '0'  # Kolom P (TOTAL)
+                masuk = r[1].strip() if len(r) > 1 else '0'      # Kolom B
+                keluar = r[2].strip() if len(r) > 2 else '0'     # Kolom C
+                stok = r[3].strip() if len(r) > 3 else '0'       # Kolom D
+                keterangan = r[4].strip() if len(r) > 4 else ''  # Kolom E
+                transaksi = r[7].strip() if len(r) > 7 else ''   # Kolom H
+                nama_material = r[8].strip() if len(r) > 8 else ''  # Kolom I
+                jobtype = r[9].strip() if len(r) > 9 else ''     # Kolom J
+                gudang = r[11].strip() if len(r) > 11 else ''    # Kolom L
+                harga = r[14].strip() if len(r) > 14 else '0'   # Kolom O (HARGA D365)
+                total = r[15].strip() if len(r) > 15 else '0'   # Kolom P (TOTAL)
+                
                 if nama_material:
                     try: m = float(masuk.replace(',','')) if masuk else 0.0
                     except: m = 0.0
@@ -214,14 +215,26 @@ def load_all():
                     except: k = 0.0
                     try: s = float(stok.replace(',','')) if stok else 0.0
                     except: s = 0.0
+                    try: h = float(harga.replace(',','')) if harga else 0.0
+                    except: h = 0.0
                     try: t = float(total.replace(',','')) if total else 0.0
                     except: t = 0.0
+                    
+                    # HITUNG TOTAL = KELUAR × HARGA_D365 (bukan pakai kolom P)
+                    total_cost = k * h
+                    
                     p_rows.append({
-                        'Tanggal': tanggal, 'Nama Material': nama_material,
-                        'Masuk': m, 'Keluar': k, 'Stok': s,
-                        'Gudang': gudang, 'Keterangan': keterangan,
-                        'Transaksi': transaksi, 'JobType': jobtype,
-                        'TOTAL': t,  # Simpan TOTAL dari kolom P
+                        'Tanggal': tanggal,
+                        'Nama Material': nama_material,
+                        'Masuk': m,
+                        'Keluar': k,
+                        'Stok': s,
+                        'Gudang': gudang,
+                        'Keterangan': keterangan,
+                        'Transaksi': transaksi,
+                        'JobType': jobtype,
+                        'HARGA_D365': h,
+                        'TOTAL_COST': total_cost,
                     })
             df_p = pd.DataFrame(p_rows)
             if not df_p.empty:
@@ -345,18 +358,6 @@ def page_analisis():
         st.warning("Data pemakaian (sheet Gabungan) belum tersedia.")
         return
 
-    # Gunakan TOTAL sebagai Cost
-    if 'TOTAL' in df_pakai.columns:
-        df_pakai.rename(columns={'TOTAL': 'Total_Cost'}, inplace=True)
-    else:
-        st.error("Kolom TOTAL tidak ditemukan di data pemakaian.")
-        return
-
-    # Numerik
-    for col in ['Masuk','Keluar','Stok','Total_Cost']:
-        if col in df_pakai.columns:
-            df_pakai[col] = pd.to_numeric(df_pakai[col], errors='coerce').fillna(0)
-
     # Normalisasi nama
     nama_map = {
         'water coollant reco-cool - drum': 'WATER COOLLANT RECO-COOL MULTIROAD-DRUM',
@@ -369,6 +370,11 @@ def page_analisis():
     }
     df_pakai['Nama Material'] = df_pakai['Nama Material'].str.strip().str.lower()
     df_pakai['Nama Material'] = df_pakai['Nama Material'].apply(lambda x: nama_map.get(x, x.upper()))
+
+    # Numerik
+    for col in ['Masuk','Keluar','Stok','TOTAL_COST']:
+        if col in df_pakai.columns:
+            df_pakai[col] = pd.to_numeric(df_pakai[col], errors='coerce').fillna(0)
 
     # Tanggal
     if 'Tanggal' in df_pakai.columns:
@@ -399,15 +405,19 @@ def page_analisis():
     if sel_tahun: f = f[f['Tahun'].astype(str).isin(sel_tahun)]
     if sel_periode: f = f[f['Periode'].astype(str).isin(sel_periode)]
 
-    # Pivot: TOTAL sudah merupakan Cost
-    pivot_cost = f.pivot_table(index='Nama Material', values=['Keluar','Total_Cost'], aggfunc={'Keluar':'sum','Total_Cost':'sum'})
-    grand_total_cost = pivot_cost['Total_Cost'].sum()
+    # PIVOT: TOTAL_COST sudah = Keluar × HARGA_D365
+    pivot_cost = f.pivot_table(
+        index='Nama Material',
+        values=['Keluar', 'TOTAL_COST'],
+        aggfunc={'Keluar': 'sum', 'TOTAL_COST': 'sum'}
+    )
+    grand_total_cost = pivot_cost['TOTAL_COST'].sum()
 
     # KPI
     st.subheader("📈 Ringkasan Pemakaian")
     k1,k2,k3,k4 = st.columns(4)
     k1.metric("Total Transaksi", len(f))
-    k2.metric("Total Keluar", f"{f['Keluar'].sum():,.0f}" if 'Keluar' in f.columns else "0")
+    k2.metric("Total Keluar", f"{f['Keluar'].sum():,.0f}")
     k3.metric("Total Masuk", f"{f['Masuk'].sum():,.0f}" if 'Masuk' in f.columns else "0")
     k4.metric("💰 Grand Total Cost", f"Rp {grand_total_cost:,.0f}")
     st.markdown("---")
@@ -444,20 +454,26 @@ def page_analisis():
         st.plotly_chart(fig2, use_container_width=True)
     st.markdown("---")
 
-    # COST
+    # COST - TOP 10
     st.subheader("💰 TOP 10 Cost Material")
-    top_cost = pivot_cost[pivot_cost['Total_Cost'] > 0].nlargest(10, 'Total_Cost').sort_values('Total_Cost', ascending=True)
+    top_cost = pivot_cost[pivot_cost['TOTAL_COST'] > 0].nlargest(10, 'TOTAL_COST').sort_values('TOTAL_COST', ascending=True)
     if not top_cost.empty:
         fig3 = go.Figure()
-        fig3.add_trace(go.Bar(y=top_cost.index, x=top_cost['Total_Cost'], orientation='h', marker=dict(color='#27AE60'),
-                              text=top_cost['Total_Cost'].apply(lambda x: f'Rp {x:,.0f}'), textposition='outside'))
+        fig3.add_trace(go.Bar(
+            y=top_cost.index,
+            x=top_cost['TOTAL_COST'],
+            orientation='h',
+            marker=dict(color='#27AE60'),
+            text=top_cost['TOTAL_COST'].apply(lambda x: f'Rp {x:,.0f}'),
+            textposition='outside'
+        ))
         fig3.update_layout(height=380, margin=dict(l=250, r=100, t=30, b=20))
         st.plotly_chart(fig3, use_container_width=True)
     st.markdown("---")
 
     # TABEL DETAIL
     st.subheader("📋 Detail Pemakaian Material")
-    cols = ['Tanggal','Nama Material','Masuk','Keluar','Stok','Gudang','Keterangan','Transaksi','JobType','Total_Cost']
+    cols = ['Tanggal','Nama Material','Masuk','Keluar','Stok','Gudang','Keterangan','Transaksi','JobType','TOTAL_COST']
     cols = [c for c in cols if c in f.columns]
     if 'Tanggal' in f.columns: f = f.sort_values('Tanggal', ascending=False)
     st.dataframe(f[cols], use_container_width=True, hide_index=True, height=400)
