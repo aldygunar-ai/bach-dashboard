@@ -16,10 +16,11 @@ st.markdown("""
 <style>
     .main { background-color: #F8F9FA; }
     [data-testid="stSidebar"] { background-color: #0A2540 !important; }
-    [data-testid="stSidebar"] * { color: #FFFFFF !important; }
-    [data-testid="stSidebar"] label p { color: #FFFFFF !important; font-weight: 500 !important; }
+    [data-testid="stSidebar"] * { color: #CCCCCC !important; }
+    [data-testid="stSidebar"] label p { color: #CCCCCC !important; font-weight: 500 !important; }
     [data-testid="stSidebarNav"] span { color: #FFFFFF !important; }
     [data-testid="stSidebarNav"] a { color: #FFFFFF !important; }
+    [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 { color: #FFFFFF !important; }
     div[data-testid="stMetricValue"] { font-size: 28px; font-weight: 800; color: #0A2540; }
     .stPlotlyChart { background: white; border-radius: 10px; padding: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
     [data-testid="stDataFrame"] { background: white; border-radius: 10px; padding: 8px; }
@@ -59,6 +60,7 @@ PREVENTIVE_MAP = {
 NORMALIZE_NAME = {
     'AF25278': 'Air Filter Element', 'AF872': 'Air Filter Element',
     'RIMULA R4 X 15W-40': 'Oli Shell', 'WCL': 'Coolant',
+    'ACC-Y': 'ACCU 12V N150 YUASA',  # Gabung ACC-Y
 }
 
 def norm(kode, nama):
@@ -92,7 +94,6 @@ def load_all():
     cl = get_client()
     res = {'stock':pd.DataFrame(),'m1':None,'m2':None,'cik':pd.DataFrame()}
 
-    # STOK
     rows = []
     for pltd, sid in PLTD_SHEETS.items():
         try:
@@ -114,7 +115,6 @@ def load_all():
         df = df.groupby(['PLTD','Kode Material','Nama Material','Jenis'], as_index=False)['Qty'].sum()
     res['stock'] = df
 
-    # MASTER
     try:
         sh = cl.open_by_key(MASTER_PLTD_ID)
         for ws in sh.worksheets():
@@ -150,7 +150,6 @@ def load_all():
                 except: pass
     except: pass
 
-    # CIKANDE
     try:
         sh = cl.open_by_key(MASTER_D365_ID)
         ws = sh.worksheet('Sheet1')
@@ -221,6 +220,7 @@ def page_stock():
     sel_jenis = st.sidebar.multiselect("Jenis Material", ['Preventive','Corrective'], default=[])
     sel_nama = st.sidebar.multiselect("Nama Material", sorted(df['Nama Material'].unique()), default=[])
     sel_kode = st.sidebar.multiselect("Kode Material", sorted(df['Kode Material'].unique()), default=[])
+    highlight_only = st.sidebar.checkbox("🔴 Highlight hanya yang kritis (≤1.5 bulan)", value=False)
 
     f = df.copy()
     if sel_pltd: f = f[f['PLTD'].isin(sel_pltd)]
@@ -245,11 +245,11 @@ def page_stock():
         p = p[['Kode Material','Nama Material'] + pltd_cols + ['WH Cikande','Total']]
         cfg = {'Kode Material':st.column_config.TextColumn(pinned=True),
                'Nama Material':st.column_config.TextColumn(pinned=True)}
-        st.dataframe(p, column_config=cfg, use_container_width=True, hide_index=True)
+        st.dataframe(p, column_config=cfg, use_container_width=True, hide_index=True, height=400)
     else:
         st.info("Tidak ada data Preventive.")
 
-    # ==== 2. SISA BULAN PREVENTIVE (TANPA WH Cikande) ====
+    # ==== 2. SISA BULAN PREVENTIVE ====
     st.subheader("⏳ Sisa Stok Preventive dalam Bulan")
 
     if not prev.empty and m1 is not None and 'pltd' in m1.columns and 'kode_material' in m1.columns and 'keb_aktual' in m1.columns:
@@ -266,7 +266,6 @@ def page_stock():
             0.0
         )
 
-        # Pivot Sisa Bulan (TANPA WH Cikande)
         sp = sisa.pivot_table(
             index=['Kode Material','Nama Material'], 
             columns='PLTD', 
@@ -275,12 +274,14 @@ def page_stock():
             fill_value=0.0
         )
         sp = sp.reset_index()
-        
-        # Hanya kolom PLTD, tanpa WH Cikande
         pltd_cols_s = [c for c in sp.columns if c not in ('Kode Material','Nama Material')]
         sp = sp[['Kode Material','Nama Material'] + pltd_cols_s]
 
-        # Konfigurasi kolom
+        # Filter highlight: hanya tampilkan material yang punya setidaknya 1 nilai ≤ 1.5
+        if highlight_only:
+            mask = (sp[pltd_cols_s] > 0) & (sp[pltd_cols_s] <= 1.5)
+            sp = sp[mask.any(axis=1)]
+
         cfg_s = {
             'Kode Material': st.column_config.TextColumn(pinned=True),
             'Nama Material': st.column_config.TextColumn(pinned=True),
@@ -288,14 +289,13 @@ def page_stock():
         for col in pltd_cols_s:
             cfg_s[col] = st.column_config.NumberColumn(format="%.1f")
         
-        # Highlight nilai ≤ 1.5
         def highlight_low(val):
             if isinstance(val, (int, float)) and val > 0 and val <= 1.5:
                 return 'background-color: #ffcccc; color: #cc0000; font-weight: bold;'
             return ''
         
         styled_df = sp.style.map(highlight_low, subset=pltd_cols_s)
-        st.dataframe(styled_df, column_config=cfg_s, use_container_width=True, hide_index=True)
+        st.dataframe(styled_df, column_config=cfg_s, use_container_width=True, hide_index=True, height=400)
         
     else:
         st.info("Data Sisa Bulan tidak tersedia (periksa sheet Master data 1).")
@@ -312,7 +312,7 @@ def page_stock():
         p = p[['Kode Material','Nama Material'] + pltd_cols + ['WH Cikande','Total']]
         cfg = {'Kode Material':st.column_config.TextColumn(pinned=True),
                'Nama Material':st.column_config.TextColumn(pinned=True)}
-        st.dataframe(p, column_config=cfg, use_container_width=True, hide_index=True)
+        st.dataframe(p, column_config=cfg, use_container_width=True, hide_index=True, height=400)
     else:
         st.info("Tidak ada data Corrective.")
 
