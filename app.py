@@ -350,7 +350,7 @@ def page_analisis():
         st.warning("Data pemakaian (sheet Gabungan) belum tersedia.")
         return
 
-    # Normalisasi nama material
+    # ==== NORMALISASI NAMA MATERIAL (LOWERCASE + STRIP) ====
     nama_map = {
         'water coollant reco-cool - drum': 'WATER COOLLANT RECO-COOL MULTIROAD-DRUM',
         'water coollant reco-cool multiroad-drum': 'WATER COOLLANT RECO-COOL MULTIROAD-DRUM',
@@ -369,9 +369,43 @@ def page_analisis():
         'v-belt 5412990 cummins': 'V-BELT 5412990 CUMMINS',
         'oil shell rimula r3mv 15w-40 (drum @ 209 ltr)': 'OIL SHELL RIMULA R3MV 15W-40 (DRUM @ 209 LTR)',
         'ct dropkit 1250 kva cummins': 'CT DROPKIT 1250 KVA CUMMINS',
+        'push rod 3017961 cummins': 'PUSH ROD 3017961 CUMMINS',
+        'valve push rod 3057139 cummins': 'VALVE PUSH ROD 3057139 CUMMINS',
+        'mpu 4914162 cummins': 'MPU 4914162 CUMMINS',
+        'relay my2 24 vdc omron': 'RELAY MY2 24 VDC OMRON',
+        'relay my4 24 vdc omron': 'RELAY MY4 24 VDC OMRON',
+        'kepala accu timah (+)(-)': 'KEPALA ACCU TIMAH (+)(-)',
+        'socket relay my2': 'SOCKET RELAY MY2',
+        'element air filter aho1135': 'ELEMENT AIR FILTER AHO1135',
     }
+    
+    # Normalisasi: lowercase dulu, lalu mapping
     df_pakai['Nama Material'] = df_pakai['Nama Material'].str.strip()
-    df_pakai['Nama Material'] = df_pakai['Nama Material'].apply(lambda x: nama_map.get(x.lower(), x))
+    df_pakai['Nama Material Lower'] = df_pakai['Nama Material'].str.lower()
+    df_pakai['Nama Material'] = df_pakai['Nama Material Lower'].apply(
+        lambda x: nama_map.get(x, x.upper())  # kalau tidak ada di map, uppercase
+    )
+    df_pakai.drop(columns=['Nama Material Lower'], inplace=True)
+
+    # ... (lanjutkan dengan Kode & Jenis, Tanggal, dll.)
+
+    # ==== PIVOT COST ====
+    pivot_cost = f.pivot_table(
+        index='Nama Material',
+        values=['Keluar', 'HARGA_D365'],
+        aggfunc={'Keluar': 'sum', 'HARGA_D365': 'max'}
+    )
+    pivot_cost['Total_Cost'] = pivot_cost['Keluar'] * pivot_cost['HARGA_D365']
+    grand_total_cost = pivot_cost['Total_Cost'].sum()
+    
+    # DEBUG: Tampilkan di expander (bisa dihapus nanti)
+    with st.expander("🔍 Debug Cost", expanded=False):
+        st.write(f"Grand Total Cost: Rp {grand_total_cost:,.0f}")
+        st.write("TOP 20 Cost:")
+        st.dataframe(pivot_cost.nlargest(20, 'Total_Cost')[['Keluar', 'HARGA_D365', 'Total_Cost']])
+        st.write("Material dengan HARGA_D365 = 0:")
+        no_harga = pivot_cost[pivot_cost['HARGA_D365'] == 0].index.tolist()
+        st.write(no_harga[:20])
 
     # Kode & Jenis
     if not df_stock.empty:
