@@ -52,38 +52,57 @@ DELIVERY_URL = "https://bachmulti-my.sharepoint.com/:x:/g/personal/prabawa_bachg
 
 # ======================== PREVENTIVE EXACT ========================
 PREVENTIVE_MAP = {
-    ('Oil Filter', 'LF3325'),
-    ('Oil Filter By pass', 'LF777'),
-    ('Element Water Separator', '2020PM V30-C'),
-    ('Fuel Filter', 'FS1006'),
-    ('Water Filter', 'WF2076'),
-    ('Cylinder head cover gasket', '3629140'),
-    ('Air Filter Element', 'AF872'),
-    ('Air Filter Element', 'AF25278'),
-    ('Air Filter Element (Free)', 'AF25278'),
-    ('Air Filter Element (Aksa)', 'AHO1135'),
-    ('V-BELT Fan Radiator', '5413003'),
-    ('V-BELT (Aksa)', '3015257'),
-    ('V-BELT Alternator', '5412990'),
-    ('V-BELT Alternator', '5PK889 / 21-3107 / 25471145'),
-    ('V-BELT Fan Radiator', '23PK2032 / 21-3110 / 25477108'),
-    ('Oli Shell (Drum)', 'Rimula R4 X 15W-40'),
-    ('Oli Shell (IBC)', 'Rimula R4 X 15W-40'),
+    'LF3325': 'Oil Filter',
+    'LF777': 'Oil Filter By pass',
+    '2020PM V30-C': 'Element Water Separator',
+    'FS1006': 'Fuel Filter',
+    'WF2076': 'Water Filter',
+    '3629140': 'Cylinder head cover gasket',
+    'AF872': 'Air Filter Element',
+    'AF25278': 'Air Filter Element',
+    'AHO1135': 'Air Filter Element (Aksa)',
+    '5413003': 'V-BELT Fan Radiator',
+    '3015257': 'V-BELT (Aksa)',
+    '5412990': 'V-BELT Alternator',
+    'RIMULA R4 X 15W-40': 'Oli Shell',
 }
 
-def is_preventive_exact(nama, kode):
-    kode_norm = str(kode).strip().lower() if kode else ''
-    nama_norm = str(nama).strip().lower() if nama else ''
-    for pn, pk in PREVENTIVE_MAP:
-        if nama_norm == pn.strip().lower() or kode_norm == pk.strip().lower():
+# Normalisasi nama material berdasarkan kode
+NORMALIZE_NAME = {
+    'AF25278': 'Air Filter Element',
+    'AF872': 'Air Filter Element',
+    'RIMULA R4 X 15W-40': 'Oli Shell',
+    '3057139': 'Push Rod Valve',
+    '306232220': 'Control Governor Cummins',
+    'ACC-Y': 'ACCU 12V N150 YUASA',
+    'CL900-10': 'Element Fuel Filter (10 Micron)',
+    'CL-900-10': 'Element Fuel Filter (10 Micron)',
+    'WCL': 'Coolant',
+}
+
+def normalize_material(kode, nama):
+    """Normalisasi nama material berdasarkan kode."""
+    kode_clean = str(kode).strip().upper() if kode else ''
+    # Cek di NORMALIZE_NAME
+    if kode_clean in NORMALIZE_NAME:
+        return NORMALIZE_NAME[kode_clean]
+    # Cek di PREVENTIVE_MAP
+    for pk, pn in PREVENTIVE_MAP.items():
+        if kode_clean == pk.upper():
+            return pn
+    # Jika tidak ada di mapping, kembalikan nama asli
+    return nama
+
+def is_preventive_exact(kode):
+    """Hanya berdasarkan kode material."""
+    kode_norm = str(kode).strip().upper() if kode else ''
+    for pk in PREVENTIVE_MAP:
+        if kode_norm == pk.upper():
             return True
-    for part in re.split(r'\s*/\s*', kode_norm):
-        for _, pk in PREVENTIVE_MAP:
-            if part == pk.strip().lower(): return True
-    for _, pk in PREVENTIVE_MAP:
-        if len(pk.strip()) >= 3 and pk.strip().lower() in kode_norm: return True
-    for pn, _ in PREVENTIVE_MAP:
-        if nama_norm == pn.strip().lower(): return True
+        # Split multi-kode
+        for part in re.split(r'\s*/\s*', kode_norm):
+            if part == pk.upper():
+                return True
     return False
 
 def is_valid_material(kode, nama):
@@ -126,11 +145,13 @@ def load_all_data():
                 qty_s = r[8].strip() if len(r)>8 else '0'
                 if not is_valid_material(kode,nama): continue
                 qty = float(qty_s.replace(',','')) if qty_s else 0.0
-                rows.append((pltd,kode,nama,qty))
+                # Normalisasi nama
+                nama_normal = normalize_material(kode, nama)
+                rows.append((pltd,kode,nama_normal,qty))
         except: pass
     df = pd.DataFrame(rows, columns=['PLTD','Kode Material','Nama Material','Qty'])
     if not df.empty:
-        df['Jenis'] = df.apply(lambda r: 'Preventive' if is_preventive_exact(r['Nama Material'],r['Kode Material']) else 'Corrective', axis=1)
+        df['Jenis'] = df['Kode Material'].apply(lambda k: 'Preventive' if is_preventive_exact(k) else 'Corrective')
         df = df.groupby(['PLTD','Kode Material','Nama Material','Jenis'], as_index=False)['Qty'].sum()
     res['stock'] = df
 
@@ -148,10 +169,8 @@ def load_all_data():
                           'Kebutuhan Perbulan Sesuai CF PM':'keb_pm',
                           'Kebutuhan Perbulan Sesuai Aktual FC':'keb_aktual'}
                     df1.rename(columns={k:v for k,v in rm.items() if k in df1.columns}, inplace=True)
-                    if 'pltd' in df1.columns:
-                        df1['pltd'] = df1['pltd'].astype(str).str.strip()
-                    if 'kode_material' in df1.columns:
-                        df1['kode_material'] = df1['kode_material'].astype(str).str.strip()
+                    if 'pltd' in df1.columns: df1['pltd'] = df1['pltd'].astype(str).str.strip()
+                    if 'kode_material' in df1.columns: df1['kode_material'] = df1['kode_material'].astype(str).str.strip().str.upper()
                     res['master1'] = df1
                 except: pass
             if 'master data 2' in tl:
@@ -162,18 +181,13 @@ def load_all_data():
                     df2.rename(columns={k:v for k,v in rm2.items() if k in df2.columns}, inplace=True)
                     if 'pltd' not in df2.columns:
                         for c in df2.columns:
-                            if 'pltd' in c.lower() or 'nama' in c.lower():
-                                df2.rename(columns={c:'pltd'}, inplace=True); break
+                            if 'pltd' in c.lower(): df2.rename(columns={c:'pltd'}, inplace=True); break
                     if 'durasi_kirim' not in df2.columns:
                         for c in df2.columns:
-                            if 'durasi' in c.lower() and ('darat' in c.lower() or 'kirim' in c.lower()):
-                                df2.rename(columns={c:'durasi_kirim'}, inplace=True); break
-                    if 'pltd' in df2.columns:
-                        df2['pltd'] = df2['pltd'].astype(str).str.strip()
-                    if 'durasi_kirim' in df2.columns:
-                        df2['durasi_kirim'] = pd.to_numeric(df2['durasi_kirim'], errors='coerce').fillna(14)
-                    else:
-                        df2['durasi_kirim'] = 14
+                            if 'durasi' in c.lower(): df2.rename(columns={c:'durasi_kirim'}, inplace=True); break
+                    if 'pltd' in df2.columns: df2['pltd'] = df2['pltd'].astype(str).str.strip()
+                    if 'durasi_kirim' in df2.columns: df2['durasi_kirim'] = pd.to_numeric(df2['durasi_kirim'], errors='coerce').fillna(14)
+                    else: df2['durasi_kirim'] = 14
                     res['master2'] = df2
                 except: pass
     except: pass
@@ -200,7 +214,9 @@ def load_all_data():
             qty_s = r[i_qty].strip() if i_qty<len(r) else '0'
             try: qty = float(qty_s.replace(',','')) if qty_s else 0.0
             except: qty = 0.0
-            if nama or kode: cik_rows.append({'Kode Material':kode,'Nama Material':nama,'WH Cikande':qty})
+            if nama or kode:
+                nama_normal = normalize_material(kode, nama)
+                cik_rows.append({'Kode Material':kode.upper(),'Nama Material':nama_normal,'WH Cikande':qty})
         df_cik = pd.DataFrame(cik_rows)
         if not df_cik.empty:
             df_cik = df_cik.groupby(['Kode Material','Nama Material'], as_index=False)['WH Cikande'].sum()
@@ -241,7 +257,7 @@ def home():
 def page_stock():
     st.title("📦 Stok Material PLTD")
     data = load_all_data()
-    df = data['stock']
+    df = data['stock'].copy()
     if df.empty: st.warning("Data belum tersedia."); return
 
     df_cik = data['cikande']
@@ -264,8 +280,8 @@ def page_stock():
     if sel_nama: f = f[f['Nama Material'].isin(sel_nama)]
     if sel_kode: f = f[f['Kode Material'].isin(sel_kode)]
 
-    prev = f[f['Jenis']=='Preventive']
-    corr = f[f['Jenis']=='Corrective']
+    prev = f[f['Jenis']=='Preventive'].copy()
+    corr = f[f['Jenis']=='Corrective'].copy()
 
     def tampil(data, judul, ikon):
         if data.empty: st.info(f"Tidak ada data {judul}."); return
@@ -290,14 +306,14 @@ def page_stock():
     master1 = data['master1']
     master2 = data['master2']
 
-    anal = prev.copy()
-    # Strip PLTD untuk merge
+    anal = f[f['Jenis']=='Preventive'].copy()
     anal['PLTD'] = anal['PLTD'].astype(str).str.strip()
+    anal['Kode Material'] = anal['Kode Material'].astype(str).str.strip().str.upper()
 
     if master1 is not None and 'pltd' in master1.columns and 'kode_material' in master1.columns:
         m1 = master1[['pltd','kode_material','keb_aktual']].copy()
         m1['pltd'] = m1['pltd'].astype(str).str.strip()
-        m1['kode_material'] = m1['kode_material'].astype(str).str.strip()
+        m1['kode_material'] = m1['kode_material'].astype(str).str.strip().str.upper()
         anal = anal.merge(m1, left_on=['PLTD','Kode Material'], right_on=['pltd','kode_material'], how='left')
         anal.drop(columns=['pltd','kode_material'], inplace=True, errors='ignore')
     else:
