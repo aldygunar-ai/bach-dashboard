@@ -50,47 +50,57 @@ MASTER_PLTD_ID = '1FsaZyKs3DgJlyZkx5qqpBotNK8Z6C8GOrNeJv3I8AJA'
 MASTER_D365_ID = '1C7r0AUC3taKIMR1CVmIle5gm333F4r2VPo7lWeqeH8A'
 DELIVERY_URL = "https://bachmulti-my.sharepoint.com/:x:/g/personal/prabawa_bachgroup_co_id/IQDpLV2xOcHmS51kfDxWqHQAAUHHovDCqOPtICGu3HUp6nc?download=1"
 
-# ======================== PREVENTIVE ========================
-PREVENTIVE_TABLE = [
-    ("Oil Filter", "LF3325"), ("Oil Filter By pass", "LF777"),
-    ("Element Water Separator", "2020PM V30-C"), ("Fuel Filter", "FS1006"),
-    ("Water Filter", "WF2076"), ("Cylinder head cover gasket", "3629140"),
-    ("Air Filter Element", "AF872"), ("Air Filter Element", "AF25278"),
-    ("Air Filter Element (Free)", "AF25278"), ("Air Filter Element (Aksa)", "AHO1135"),
-    ("V-BELT Fan Radiator", "5413003"), ("V-BELT (Aksa)", "3015257"),
-    ("V-BELT Alternator", "5412990"), ("V-BELT Alternator", "5PK889"),
-    ("V-BELT Alternator", "21-3107"), ("V-BELT Alternator", "25471145"),
-    ("V-BELT Fan Radiator", "23PK2032"), ("V-BELT Fan Radiator", "21-3110"),
-    ("V-BELT Fan Radiator", "25477108"), ("Oli Shell (Drum)", "Rimula R4 X 15W-40"),
-    ("Oli Shell (IBC)", "Rimula R4 X 15W-40"),
-]
-
-PREVENTIVE_NAME_KEYWORDS = {
-    "oil filter", "element water separator", "fuel filter", "water filter",
-    "cylinder head cover gasket", "air filter element", "v-belt", "oli shell", "rimula", "v belt",
-    "ra", "air fil", "v be", "gasket cylin"
+# ======================== PREVENTIVE EXACT ========================
+PREVENTIVE_MAP = {
+    ('Oil Filter', 'LF3325'),
+    ('Oil Filter By pass', 'LF777'),
+    ('Element Water Separator', '2020PM V30-C'),
+    ('Fuel Filter', 'FS1006'),
+    ('Water Filter', 'WF2076'),
+    ('Cylinder head cover gasket', '3629140'),
+    ('Air Filter Element', 'AF872'),
+    ('Air Filter Element', 'AF25278'),
+    ('Air Filter Element (Free)', 'AF25278'),
+    ('Air Filter Element (Aksa)', 'AHO1135'),
+    ('V-BELT Fan Radiator', '5413003'),
+    ('V-BELT (Aksa)', '3015257'),
+    ('V-BELT Alternator', '5412990'),
+    ('V-BELT Alternator', '5PK889 / 21-3107 / 25471145'),
+    ('V-BELT Fan Radiator', '23PK2032 / 21-3110 / 25477108'),
+    ('Oli Shell (Drum)', 'Rimula R4 X 15W-40'),
+    ('Oli Shell (IBC)', 'Rimula R4 X 15W-40'),
 }
 
-def _norm(s):
-    return re.sub(r'\s+', '', str(s).lower())
+def is_preventive_exact(nama, kode):
+    """Exact match nama+kode, atau partial match kode setelah split '/'."""
+    kode_norm = str(kode).strip().lower() if kode else ''
+    nama_norm = str(nama).strip().lower() if nama else ''
 
-PREVENTIVE_CODES_NORM = set()
-for _, code in PREVENTIVE_TABLE:
-    for part in re.split(r'\s*/\s*', code):
-        PREVENTIVE_CODES_NORM.add(_norm(part))
+    # Cek pasangan (nama, kode)
+    for pn, pk in PREVENTIVE_MAP:
+        pn_n = pn.strip().lower()
+        pk_n = pk.strip().lower()
+        if nama_norm == pn_n or kode_norm == pk_n:
+            return True
 
-def is_preventive(kode, nama=""):
-    if not kode and not nama: return False
-    kn = _norm(kode) if kode else ""
-    nn = _norm(nama) if nama else ""
-    if kn:
-        for p in re.split(r'\s*/\s*', kn):
-            if p in PREVENTIVE_CODES_NORM: return True
-        for pc in PREVENTIVE_CODES_NORM:
-            if len(pc) >= 3 and pc in kn: return True
-    if nn:
-        for kw in PREVENTIVE_NAME_KEYWORDS:
-            if kw in nn: return True
+    # Split kode multi-varian
+    for part in re.split(r'\s*/\s*', kode_norm):
+        part = part.strip()
+        for _, pk in PREVENTIVE_MAP:
+            if part == pk.strip().lower():
+                return True
+
+    # Jika kode mengandung salah satu kode preventive
+    for _, pk in PREVENTIVE_MAP:
+        pk_n = pk.strip().lower()
+        if len(pk_n) >= 3 and pk_n in kode_norm:
+            return True
+
+    # Jika nama persis
+    for pn, _ in PREVENTIVE_MAP:
+        if nama_norm == pn.strip().lower():
+            return True
+
     return False
 
 def is_valid_material(kode, nama):
@@ -117,13 +127,13 @@ def retry_gspread(func, *args, max_retries=3, **kwargs):
             else:
                 raise
 
-# ======================== LOAD ALL DATA ========================
+# ======================== LOAD ALL ========================
 @st.cache_data(ttl=1800)
 def load_all_data():
     client = get_gspread_client()
     result = {'stock': pd.DataFrame(), 'master1': None, 'master2': None, 'cikande': pd.DataFrame(), 'delivery': pd.DataFrame()}
 
-    # ========== 1. STOK PLTD ==========
+    # 1. Stok PLTD
     rows = []
     for pltd, sid in PLTD_SHEETS.items():
         try:
@@ -137,97 +147,79 @@ def load_all_data():
                 qty_s = r[8].strip() if len(r) > 8 else '0'
                 if not is_valid_material(kode, nama): continue
                 qty = float(qty_s.replace(',', '')) if qty_s else 0.0
-                if kode or nama:
-                    rows.append((pltd, kode, nama, qty))
+                rows.append((pltd, kode, nama, qty))
         except: pass
     df = pd.DataFrame(rows, columns=['PLTD', 'Kode Material', 'Nama Material', 'Qty'])
     if not df.empty:
-        df['Jenis'] = df.apply(lambda r: 'Preventive' if is_preventive(r['Kode Material'], r['Nama Material']) else 'Corrective', axis=1)
+        df['Jenis'] = df.apply(lambda r: 'Preventive' if is_preventive_exact(r['Nama Material'], r['Kode Material']) else 'Corrective', axis=1)
         df = df.groupby(['PLTD', 'Kode Material', 'Nama Material', 'Jenis'], as_index=False)['Qty'].sum()
     result['stock'] = df
 
-    # ========== 2. MASTER DATA ==========
+    # 2. Master Data
     try:
         sh = retry_gspread(client.open_by_key, MASTER_PLTD_ID)
-        # Master 1
-        try:
-            ws1 = sh.worksheet('Master data 1')
-            df1 = get_as_dataframe(ws1, evaluate_formulas=True)
-            df1.columns = [str(c).strip() for c in df1.columns]
-            rename1 = {
-                'Nama Material':'nama_material','Kode Material':'kode_material',
-                'Nama PLTD':'pltd','Harga D365':'harga',
-                'Kebutuhan Perbulan Sesuai CF PM':'keb_pm',
-                'Kebutuhan Perbulan Sesuai Aktual FC':'keb_aktual'
-            }
-            df1.rename(columns={k:v for k,v in rename1.items() if k in df1.columns}, inplace=True)
-            result['master1'] = df1
-        except Exception as e:
-            st.warning(f"Master1 error: {e}")
+        # Master 1 (strip nama sheet)
+        for ws in sh.worksheets():
+            if 'master data 1' in ws.title.strip().lower():
+                try:
+                    df1 = get_as_dataframe(ws, evaluate_formulas=True)
+                    df1.columns = [str(c).strip() for c in df1.columns]
+                    rename1 = {
+                        'Nama Material':'nama_material','Kode Material':'kode_material',
+                        'Nama PLTD':'pltd','Harga D365':'harga',
+                        'Kebutuhan Perbulan Sesuai CF PM':'keb_pm',
+                        'Kebutuhan Perbulan Sesuai Aktual FC':'keb_aktual'
+                    }
+                    df1.rename(columns={k:v for k,v in rename1.items() if k in df1.columns}, inplace=True)
+                    result['master1'] = df1
+                except: pass
+                break
         # Master 2
-        try:
-            ws2 = sh.worksheet('Master data 2')
-            df2 = get_as_dataframe(ws2, evaluate_formulas=True)
-            # Bersihkan nama kolom
-            df2.columns = [str(c).strip() for c in df2.columns]
-            # Debug: tampilkan nama kolom
-            # st.write("Master2 columns:", df2.columns.tolist())
-            # Exact rename
-            rename2 = {
-                'Nama PLTD': 'pltd',
-                'Durasi Kirim Darat+Laut (Hari)': 'durasi_kirim'
-            }
-            df2.rename(columns={k:v for k,v in rename2.items() if k in df2.columns}, inplace=True)
-            # Fallback: cari kolom mengandung 'pltd' dan 'durasi'
-            if 'pltd' not in df2.columns:
-                for c in df2.columns:
-                    if 'pltd' in c.lower() or 'nama' in c.lower():
-                        df2.rename(columns={c: 'pltd'}, inplace=True)
-                        break
-            if 'durasi_kirim' not in df2.columns:
-                for c in df2.columns:
-                    if 'durasi' in c.lower() and ('kirim' in c.lower() or 'darat' in c.lower()):
-                        df2.rename(columns={c: 'durasi_kirim'}, inplace=True)
-                        break
-            if 'durasi_kirim' in df2.columns:
-                df2['durasi_kirim'] = pd.to_numeric(df2['durasi_kirim'], errors='coerce').fillna(14)
-            else:
-                df2['durasi_kirim'] = 14
-            result['master2'] = df2
-        except Exception as e:
-            st.warning(f"Master2 error: {e}")
+        for ws in sh.worksheets():
+            if 'master data 2' in ws.title.strip().lower():
+                try:
+                    df2 = get_as_dataframe(ws, evaluate_formulas=True)
+                    df2.columns = [str(c).strip() for c in df2.columns]
+                    rename2 = {
+                        'Nama PLTD': 'pltd',
+                        'Durasi Kirim Darat+Laut (Hari)': 'durasi_kirim'
+                    }
+                    df2.rename(columns={k:v for k,v in rename2.items() if k in df2.columns}, inplace=True)
+                    if 'pltd' not in df2.columns:
+                        for c in df2.columns:
+                            if 'pltd' in c.lower(): df2.rename(columns={c:'pltd'}, inplace=True); break
+                    if 'durasi_kirim' not in df2.columns:
+                        for c in df2.columns:
+                            if 'durasi' in c.lower() and ('darat' in c.lower() or 'kirim' in c.lower()):
+                                df2.rename(columns={c:'durasi_kirim'}, inplace=True)
+                                break
+                    if 'durasi_kirim' in df2.columns:
+                        df2['durasi_kirim'] = pd.to_numeric(df2['durasi_kirim'], errors='coerce').fillna(14)
+                    else:
+                        df2['durasi_kirim'] = 14
+                    result['master2'] = df2
+                except: pass
+                break
     except Exception as e:
         st.warning(f"Master sheet error: {e}")
 
-    # ========== 3. CIKANDE ==========
+    # 3. Cikande
     try:
         sh = retry_gspread(client.open_by_key, MASTER_D365_ID)
         ws = sh.worksheet('Sheet1')
         data = ws.get_all_values()
-        # Cari baris header (bisa di baris 1 atau 2)
-        header_row = 0
-        for i, row in enumerate(data[:3]):  # cek 3 baris pertama
-            row_clean = [str(c).strip().lower() for c in row]
-            if 'nama' in ' '.join(row_clean) or 'kode' in ' '.join(row_clean) or 'cikande' in ' '.join(row_clean):
+        # Cari header dengan keyword 'nama', 'matrial', 'cikande'
+        header_row = -1
+        for i, row in enumerate(data[:5]):
+            row_lower = ' '.join([str(c).strip().lower() for c in row])
+            if 'nama' in row_lower and ('cikande' in row_lower or 'kode' in row_lower):
                 header_row = i
                 break
+        if header_row < 0: header_row = 0
         header = [str(c).strip().lower() for c in data[header_row]]
-        # st.write("Cikande header:", header)
-        # Deteksi index
-        idx_nama = None
-        idx_kode = None
-        idx_qty = None
-        for i, h in enumerate(header):
-            if not idx_nama and ('nama' in h or 'material' in h or 'description' in h):
-                idx_nama = i
-            elif not idx_kode and ('kode' in h or 'seri' in h or 'code' in h or 'item' in h):
-                idx_kode = i
-            elif not idx_qty and ('cikande' in h or 'qty' in h or 'stock' in h or 'quantity' in h):
-                idx_qty = i
-        if idx_nama is None: idx_nama = 0
-        if idx_kode is None: idx_kode = 1
-        if idx_qty is None: idx_qty = 2
-        # st.write(f"Nama={idx_nama}, Kode={idx_kode}, Qty={idx_qty}")
+        idx_nama = next((i for i, h in enumerate(header) if 'nama' in h or 'material' in h), 0)
+        idx_kode = next((i for i, h in enumerate(header) if 'kode' in h or 'seri' in h), 1)
+        idx_qty = next((i for i, h in enumerate(header) if 'cikande' in h), 2)
         cik_rows = []
         for r in data[header_row+1:]:
             if len(r) <= max(idx_nama, idx_kode, idx_qty): continue
@@ -244,10 +236,9 @@ def load_all_data():
         if not df_cik.empty:
             df_cik = df_cik.groupby(['Kode Material', 'Nama Material'], as_index=False)['Qty Cikande'].sum()
         result['cikande'] = df_cik
-    except Exception as e:
-        st.warning(f"Cikande error: {e}")
+    except: pass
 
-    # ========== 4. DELIVERY ==========
+    # 4. Delivery
     try:
         resp = requests.get(DELIVERY_URL, headers={'User-Agent':'Mozilla/5.0'}, timeout=20)
         result['delivery'] = pd.read_excel(io.BytesIO(resp.content))
@@ -267,7 +258,6 @@ def home():
     prev = (df['Jenis']=='Preventive').sum()
     corr = (df['Jenis']=='Corrective').sum()
     c3.metric("Preventive / Corrective", f"{prev} / {corr}")
-    st.markdown("---")
     pltd_coords = {
         'Pemaron':(-8.16,114.68),'Mangoli':(-1.88,125.37),'Tayan':(-0.03,110.10),
         'Timika':(-4.56,136.89),'Bobong':(-1.95,124.39),'Merawang':(-1.95,105.96),
@@ -289,8 +279,6 @@ def page_stock():
 
     df_cik = data['cikande']
     if not df_cik.empty:
-        # Debug info (bisa dihapus nanti)
-        # st.write(f"Cikande loaded: {len(df_cik)} items, total qty: {df_cik['Qty Cikande'].sum()}")
         df = df.merge(df_cik, on=['Kode Material','Nama Material'], how='left')
         df['Qty Cikande'] = df['Qty Cikande'].fillna(0)
     else:
