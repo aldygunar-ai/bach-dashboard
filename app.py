@@ -24,6 +24,10 @@ st.markdown("""
     div[data-testid="stMetricValue"] { font-size: 28px; font-weight: 800; color: #0A2540; }
     .stPlotlyChart { background: white; border-radius: 10px; padding: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
     [data-testid="stDataFrame"] { background: white; border-radius: 10px; padding: 8px; }
+    /* Rata tengah untuk semua sel tabel */
+    [data-testid="stDataFrame"] table td, [data-testid="stDataFrame"] table th {
+        text-align: center !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -60,7 +64,7 @@ PREVENTIVE_MAP = {
 NORMALIZE_NAME = {
     'AF25278': 'Air Filter Element', 'AF872': 'Air Filter Element',
     'RIMULA R4 X 15W-40': 'Oli Shell', 'WCL': 'Coolant',
-    'ACC-Y': 'ACCU 12V N150 YUASA',  # Gabung ACC-Y
+    'ACC-Y': 'ACCU 12V N150 YUASA',
 }
 
 def norm(kode, nama):
@@ -277,7 +281,6 @@ def page_stock():
         pltd_cols_s = [c for c in sp.columns if c not in ('Kode Material','Nama Material')]
         sp = sp[['Kode Material','Nama Material'] + pltd_cols_s]
 
-        # Filter highlight: hanya tampilkan material yang punya setidaknya 1 nilai ≤ 1.5
         if highlight_only:
             mask = (sp[pltd_cols_s] > 0) & (sp[pltd_cols_s] <= 1.5)
             sp = sp[mask.any(axis=1)]
