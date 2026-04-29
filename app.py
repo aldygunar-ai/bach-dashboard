@@ -414,48 +414,42 @@ def page_analisis():
     if sel_periode: f = f[f['Periode'].astype(str).isin(sel_periode)]
     if sel_jenis: f = f[f['Jenis'].astype(str).isin(sel_jenis)]
 
-    # ==== KPI ====
+    # ==== KPI (tanpa Material Unik) ====
     st.subheader("📈 Ringkasan Pemakaian")
-    k1,k2,k3,k4,k5 = st.columns(5)
+    k1,k2,k3,k4 = st.columns(4)
     k1.metric("Total Transaksi", len(f))
     k2.metric("Total Keluar", f"{f['Keluar'].sum():,.0f}")
     k3.metric("Total Masuk", f"{f['Masuk'].sum():,.0f}")
-    k4.metric("Material Unik", f['Nama Material'].nunique())
     if 'TOTAL' in f.columns:
-        k5.metric("Total Cost", f"Rp {f['TOTAL'].sum():,.0f}")
+        k4.metric("Total Cost", f"Rp {f['TOTAL'].sum():,.0f}")
     else:
-        k5.metric("Total Cost", "N/A")
+        k4.metric("Total Cost", "N/A")
     
     st.markdown("---")
 
-    # ==== GRAFIK 1: TOTAL MASUK & KELUAR ====
+    # ==== GRAFIK 1: TOP 10 MASUK & KELUAR ====
     col1, col2 = st.columns(2)
     
     with col1:
-        st.subheader("📥 Total Inbound (Masuk)")
-        total_masuk = f['Masuk'].sum()
-        st.metric("Total Masuk", f"{total_masuk:,.0f}")
-        # Bar chart per material (top 10)
+        st.subheader("📥 TOP 10 Inbound (Masuk)")
         top_masuk = f.groupby('Nama Material')['Masuk'].sum().nlargest(10).reset_index()
         if not top_masuk.empty and top_masuk['Masuk'].sum() > 0:
             fig_masuk = px.bar(top_masuk, x='Masuk', y='Nama Material', orientation='h',
                                text='Masuk', color='Masuk', color_continuous_scale='Blues')
             fig_masuk.update_traces(texttemplate='%{text:,.0f}', textposition='outside')
-            fig_masuk.update_layout(yaxis={'categoryorder':'total ascending'}, height=350)
+            fig_masuk.update_layout(yaxis={'categoryorder':'total ascending'}, height=380, margin=dict(l=200, r=20, t=30, b=20))
             st.plotly_chart(fig_masuk, use_container_width=True)
         else:
             st.info("Tidak ada data Masuk.")
     
     with col2:
-        st.subheader("📤 Total Outbound (Keluar)")
-        total_keluar = f['Keluar'].sum()
-        st.metric("Total Keluar", f"{total_keluar:,.0f}")
+        st.subheader("📤 TOP 10 Outbound (Keluar)")
         top_keluar = f.groupby('Nama Material')['Keluar'].sum().nlargest(10).reset_index()
         if not top_keluar.empty and top_keluar['Keluar'].sum() > 0:
             fig_keluar = px.bar(top_keluar, x='Keluar', y='Nama Material', orientation='h',
                                 text='Keluar', color='Keluar', color_continuous_scale='Reds')
             fig_keluar.update_traces(texttemplate='%{text:,.0f}', textposition='outside')
-            fig_keluar.update_layout(yaxis={'categoryorder':'total ascending'}, height=350)
+            fig_keluar.update_layout(yaxis={'categoryorder':'total ascending'}, height=380, margin=dict(l=200, r=20, t=30, b=20))
             st.plotly_chart(fig_keluar, use_container_width=True)
         else:
             st.info("Tidak ada data Keluar.")
@@ -467,9 +461,13 @@ def page_analisis():
     if 'BulanStr' in f.columns:
         trend = f.groupby('BulanStr').agg(Masuk=('Masuk','sum'), Keluar=('Keluar','sum')).reset_index()
         if not trend.empty and (trend['Masuk'].sum() > 0 or trend['Keluar'].sum() > 0):
-            # Plotly Express tidak support multiple y dengan text, gunakan go.Scatter
-            fig_trend = px.line(trend, x='BulanStr', y=['Masuk','Keluar'], markers=True,
-                                color_discrete_map={'Masuk':'#4B8BBE','Keluar':'#E67E22'})
+            fig_trend = go.Figure()
+            fig_trend.add_trace(go.Scatter(x=trend['BulanStr'], y=trend['Masuk'], mode='lines+markers+text',
+                                           name='Masuk', line=dict(color='#4B8BBE'), text=trend['Masuk'].round(0),
+                                           textposition='top center'))
+            fig_trend.add_trace(go.Scatter(x=trend['BulanStr'], y=trend['Keluar'], mode='lines+markers+text',
+                                           name='Keluar', line=dict(color='#E67E22'), text=trend['Keluar'].round(0),
+                                           textposition='top center'))
             fig_trend.update_layout(height=400, xaxis_title='Bulan', yaxis_title='Quantity')
             st.plotly_chart(fig_trend, use_container_width=True)
         else:
@@ -479,14 +477,14 @@ def page_analisis():
     
     st.markdown("---")
 
-    # ==== GRAFIK 3: COST ====
-    st.subheader("💰 Cost Material Analysis")
+    # ==== GRAFIK 3: COST TOP 10 ====
+    st.subheader("💰 TOP 10 Cost Material")
     if 'TOTAL' in f.columns and f['TOTAL'].sum() > 0:
         top_cost = f.groupby('Nama Material')['TOTAL'].sum().nlargest(10).reset_index()
         fig_cost = px.bar(top_cost, x='TOTAL', y='Nama Material', orientation='h',
                           text='TOTAL', color='TOTAL', color_continuous_scale='Greens')
         fig_cost.update_traces(texttemplate='Rp %{text:,.0f}', textposition='outside')
-        fig_cost.update_layout(yaxis={'categoryorder':'total ascending'}, height=400)
+        fig_cost.update_layout(yaxis={'categoryorder':'total ascending'}, height=380, margin=dict(l=200, r=20, t=30, b=20))
         st.plotly_chart(fig_cost, use_container_width=True)
     else:
         st.info("Data TOTAL (kolom P) tidak tersedia.")
@@ -495,8 +493,8 @@ def page_analisis():
 
     # ==== GRAFIK 4: STOCK OUT RISK ====
     st.subheader("⚠️ Stock Out Risk & Lead Time")
-    if not df_stock.empty and m1 is not None and 'pltd' in m1.columns and 'kode_material' in m1.columns and 'keb_aktual' in m1.columns:
-        try:
+    try:
+        if not df_stock.empty and m1 is not None and 'pltd' in m1.columns and 'kode_material' in m1.columns:
             risk = df_stock[df_stock['Jenis']=='Preventive'].copy()
             risk['PLTD'] = risk['PLTD'].astype(str).str.strip().str.upper()
             risk['Kode Material'] = risk['Kode Material'].astype(str).str.strip().str.upper()
@@ -511,18 +509,22 @@ def page_analisis():
                 risk['keb_aktual'].notna() & (risk['keb_aktual']>0),
                 risk['Qty'] / risk['keb_aktual'] * 30.5, np.nan)
             
+            durasi = 14  # default
             if m2 is not None and 'pltd' in m2.columns and 'durasi_kirim' in m2.columns:
                 m2c = m2[['pltd','durasi_kirim']].copy()
                 m2c['pltd'] = m2c['pltd'].astype(str).str.strip().str.upper()
-                risk = risk.merge(m2c, on='PLTD', how='left')
-                risk['durasi_kirim'] = risk['durasi_kirim'].fillna(14)
+                if 'PLTD' in risk.columns:
+                    risk = risk.merge(m2c, on='PLTD', how='left')
+                    durasi = risk['durasi_kirim'].fillna(14)
+                else:
+                    durasi = 14
             else:
-                risk['durasi_kirim'] = 14
+                durasi = 14
             
             risk['Status'] = np.where(
                 risk['Sisa Hari'].isna(), 'Unknown',
-                np.where(risk['Sisa Hari'] < risk['durasi_kirim'], '🔴 Critical',
-                         np.where(risk['Sisa Hari'] < 1.5*risk['durasi_kirim'], '🟡 Warning', '🟢 Aman')))
+                np.where(risk['Sisa Hari'] < durasi, '🔴 Critical',
+                         np.where(risk['Sisa Hari'] < 1.5*durasi, '🟡 Warning', '🟢 Aman')))
             
             rc = risk['Status'].value_counts().reset_index()
             rc.columns = ['Status','Count']
@@ -530,22 +532,24 @@ def page_analisis():
                               color_discrete_map={'🔴 Critical':'#E74C3C','🟡 Warning':'#F39C12','🟢 Aman':'#27AE60','Unknown':'#95A5A6'})
             fig_risk.update_layout(height=350)
             st.plotly_chart(fig_risk, use_container_width=True)
-        except Exception as e:
-            st.warning(f"Error Risk: {e}")
-    else:
-        st.info("Data untuk analisis risiko tidak tersedia.")
+        else:
+            st.info("Data untuk analisis risiko tidak tersedia.")
+    except Exception as e:
+        st.warning(f"Stock Out Risk: data tidak cukup. ({e})")
     
     st.markdown("---")
 
     # ==== GRAFIK 5: PLAN VS AKTUAL ====
     st.subheader("📊 Plan vs Aktual")
-    if not df_stock.empty and m1 is not None and 'pltd' in m1.columns and 'kode_material' in m1.columns:
-        try:
+    try:
+        if not df_stock.empty and m1 is not None and 'pltd' in m1.columns and 'kode_material' in m1.columns:
             pva = df_stock[df_stock['Jenis']=='Preventive'].copy()
             pva['PLTD'] = pva['PLTD'].astype(str).str.strip().str.upper()
             pva['Kode Material'] = pva['Kode Material'].astype(str).str.strip().str.upper()
             
-            m1c = m1[['pltd','kode_material','keb_pm','keb_aktual']].copy() if 'keb_pm' in m1.columns else m1[['pltd','kode_material','keb_aktual']].copy()
+            cols_need = ['pltd','kode_material','keb_aktual']
+            if 'keb_pm' in m1.columns: cols_need.append('keb_pm')
+            m1c = m1[cols_need].copy()
             m1c['pltd'] = m1c['pltd'].astype(str).str.strip().str.upper()
             m1c['kode_material'] = m1c['kode_material'].astype(str).str.strip().str.upper()
             
@@ -562,22 +566,33 @@ def page_analisis():
                 else:
                     st.info("Data plan vs aktual tidak cukup.")
             else:
-                st.info("Kolom keb_pm tidak tersedia di Master 1.")
-        except Exception as e:
-            st.warning(f"Error Plan vs Aktual: {e}")
-    else:
-        st.info("Data master tidak tersedia.")
+                # Fallback: hanya tampilkan aktual
+                pva_agg = pva.groupby('Nama Material').agg(keb_aktual=('keb_aktual','sum')).reset_index()
+                pva_agg = pva_agg[pva_agg['keb_aktual'] > 0].head(10)
+                if not pva_agg.empty:
+                    fig_pva = px.bar(pva_agg, x='Nama Material', y='keb_aktual', color_discrete_sequence=['#E74C3C'])
+                    fig_pva.update_layout(height=400, xaxis_tickangle=-45)
+                    st.plotly_chart(fig_pva, use_container_width=True)
+                else:
+                    st.info("Data aktual tidak cukup.")
+        else:
+            st.info("Data master tidak tersedia.")
+    except Exception as e:
+        st.warning(f"Plan vs Aktual: data tidak cukup. ({e})")
     
     st.markdown("---")
 
     # ==== TABEL DETAIL ====
     st.subheader("📋 Detail Pemakaian Material")
-    cols = ['Tanggal','Nama Material','Kode Material','Masuk','Keluar','Stok','Gudang','Keterangan','Transaksi','JobType','Jenis','TOTAL']
+    cols = ['Tanggal','Nama Material','Kode Material','Masuk','Keluar','Stok','Gudang','Keterangan','Transaksi','JobType','Jenis']
+    if 'TOTAL' in f.columns:
+        f = f.rename(columns={'TOTAL': 'Cost Total'})
+        cols.append('Cost Total')
     cols = [c for c in cols if c in f.columns]
     if 'Tanggal' in f.columns:
         f = f.sort_values('Tanggal', ascending=False)
     st.dataframe(f[cols], use_container_width=True, hide_index=True, height=400)
-
+    
 def page_pemakaian(): st.title("🔥 Pemakaian Material"); st.info("Segera hadir.")
 def page_transaksi(): st.title("📊 Transaksi Project"); st.info("Segera hadir.")
 
