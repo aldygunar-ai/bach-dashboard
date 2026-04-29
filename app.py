@@ -345,7 +345,7 @@ def page_stock():
 
 # ======================== ANALISIS ========================
 def page_analisis():
-    st.title("📊 Analisis Pemakaian Material - DEBUG")
+    st.title("📊 Analisis Pemakaian Material")
     data = load_all()
     df_pakai = data.get('pemakaian', pd.DataFrame()).copy()
     df_stock = data.get('stock', pd.DataFrame()).copy()
@@ -354,40 +354,39 @@ def page_analisis():
         st.warning("Data pemakaian (sheet Gabungan) belum tersedia.")
         return
 
-    # ==== DEBUG INFO ====
-    with st.expander("🔍 DEBUG: Data Pemakaian Mentah", expanded=True):
-        st.write(f"**Jumlah baris:** {len(df_pakai)}")
-        st.write(f"**Kolom:** {df_pakai.columns.tolist()}")
-        st.write("**Sample data (10 baris pertama):**")
-        st.dataframe(df_pakai.head(10), use_container_width=True)
-        
-        st.write("**Sample data (10 baris terakhir):**")
-        st.dataframe(df_pakai.tail(10), use_container_width=True)
-        
-        st.write("**Nilai HARGA_D365 yang unik (20 pertama):**")
-        harga_unique = df_pakai['HARGA_D365'].value_counts().head(20) if 'HARGA_D365' in df_pakai.columns else 'KOLOM TIDAK ADA'
-        st.write(harga_unique)
-        
-        st.write("**Material dengan HARGA_D365 > 0:**")
-        if 'HARGA_D365' in df_pakai.columns:
-            with_harga = df_pakai[df_pakai['HARGA_D365'] > 0]['Nama Material'].unique()
-            st.write(list(with_harga)[:30])
-        
-        st.write("**Total Keluar per Material (TOP 20):**")
-        if 'Keluar' in df_pakai.columns and 'Nama Material' in df_pakai.columns:
-            top_keluar = df_pakai.groupby('Nama Material')['Keluar'].sum().nlargest(20)
-            st.write(top_keluar)
-        
-        st.write("**Sample material dengan Keluar > 0 dan HARGA_D365:**")
-        if 'Keluar' in df_pakai.columns and 'HARGA_D365' in df_pakai.columns:
-            sample = df_pakai[(df_pakai['Keluar'] > 0) & (df_pakai['HARGA_D365'] > 0)][['Nama Material', 'Keluar', 'HARGA_D365']].head(20)
-            st.dataframe(sample, use_container_width=True)
+    # ==== NORMALISASI NAMA MATERIAL ====
+    # Mapping untuk menyatukan variasi nama (lowercase -> standardized)
+    nama_map = {
+        'water coollant reco-cool - drum': 'WATER COOLLANT RECO-COOL MULTIROAD-DRUM',
+        'water coollant reco-cool multiroad-drum': 'WATER COOLLANT RECO-COOL MULTIROAD-DRUM',
+        'air filter element af872': 'FILTER UDARA AF872',
+        'filter udara af872': 'FILTER UDARA AF872',
+        'gasket cylinder head 3629140': 'GASKET CYLINDER HEAD 3629140',
+        'gasket cylider head 3629140': 'GASKET CYLINDER HEAD 3629140',
+        'filter separator fs 1006 fleetguard': 'FILTER SEPARATOR FS 1006 FLEETGUARD',
+        'element racor 2020pm parker': 'ELEMENT RACOR 2020PM PARKER',
+        'element racor 2020pm fleetguard': 'ELEMENT RACOR 2020PM PARKER',
+        'oil filter lf3325 fleetguard': 'OIL FILTER LF3325 FLEETGUARD',
+        'oil filter lf777 fleet gruad': 'OIL FILTER LF777 FLEET GRUAD',
+        'coolant filter wf2076 fleetguard': 'COOLANT FILTER WF2076 FLEETGUARD',
+        'filter udara af 25278': 'FILTER UDARA AF25278',
+        'v-belt 5413003 cummins': 'V-BELT 5413003 CUMMINS',
+        'v-belt 5412990 cummins': 'V-BELT 5412990 CUMMINS',
+        'push rod 3017961 cummins': 'PUSH ROD 3017961 CUMMINS',
+        'valve push rod 3057139 cummins': 'VALVE PUSH ROD 3057139 CUMMINS',
+        'mpu 4914162 cummins': 'MPU 4914162 CUMMINS',
+        'relay my2 24 vdc omron': 'RELAY MY2 24 VDC OMRON',
+        'relay my4 24 vdc omron': 'RELAY MY4 24 VDC OMRON',
+        'oil shell rimula r3mv 15w-40 (drum @ 209 ltr)': 'OIL SHELL RIMULA R3MV 15W-40 (DRUM @ 209 LTR)',
+        'kepala accu timah (+)(-)': 'KEPALA ACCU TIMAH (+)(-)',
+        'socket relay my2': 'SOCKET RELAY MY2',
+        'ct dropkit 1250 kva cummins': 'CT DROPKIT 1250 KVA CUMMINS',
+    }
     
-    # ... lanjutkan dengan kode normal (filter, grafik, dll)
-    
-    if df_pakai.empty:
-        st.warning("Data pemakaian (sheet Gabungan) belum tersedia.")
-        return
+    df_pakai['Nama Material'] = df_pakai['Nama Material'].str.strip()
+    df_pakai['Nama Material'] = df_pakai['Nama Material'].apply(
+        lambda x: nama_map.get(x.lower(), x)
+    )
 
     # Kode & Jenis
     if not df_stock.empty:
@@ -441,7 +440,7 @@ def page_analisis():
     if sel_periode: f = f[f['Periode'].astype(str).isin(sel_periode)]
     if sel_jenis: f = f[f['Jenis'].astype(str).isin(sel_jenis)]
 
-    # ==== PIVOT COST: Total Keluar × Harga Satuan ====
+    # ==== PIVOT COST ====
     pivot_cost = f.pivot_table(
         index='Nama Material',
         values=['Keluar', 'HARGA_D365'],
@@ -492,7 +491,7 @@ def page_analisis():
         st.plotly_chart(fig2, use_container_width=True)
     st.markdown("---")
 
-    # ==== 3. COST (PIVOT) ====
+    # ==== 3. COST ====
     st.subheader("💰 TOP 10 Cost Material")
     if not pivot_cost.empty and grand_total_cost > 0:
         top_cost = pivot_cost[pivot_cost['Total_Cost'] > 0].nlargest(10, 'Total_Cost').sort_values('Total_Cost', ascending=True)
@@ -509,10 +508,8 @@ def page_analisis():
             ))
             fig3.update_layout(height=380, margin=dict(l=250, r=100, t=30, b=20))
             st.plotly_chart(fig3, use_container_width=True)
-        else:
-            st.info("Data cost tidak cukup.")
     else:
-        st.info("Data HARGA_D365 tidak tersedia.")
+        st.info("Data cost tidak cukup.")
     st.markdown("---")
 
     # ==== 4. TABEL DETAIL ====
