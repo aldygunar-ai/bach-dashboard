@@ -252,8 +252,8 @@ def page_stock():
     m2 = data['m2']
 
     # Debug: tampilkan nilai unik PLTD
-    # st.write("PLTD di stok:", prev['PLTD'].unique())
-    # st.write("PLTD di M2:", m2['pltd'].unique() if m2 is not None else 'None')
+    st.write("PLTD di stok:", prev['PLTD'].unique())
+    st.write("PLTD di M2:", m2['pltd'].unique() if m2 is not None else 'None')
 
     if m1 is not None and 'pltd' in m1.columns and 'kode_material' in m1.columns:
         p1 = m1[['pltd','kode_material','keb_aktual']].copy()
