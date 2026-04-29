@@ -10,7 +10,6 @@ import io
 import re
 import time
 
-# ======================== PAGE CONFIG ========================
 st.set_page_config(page_title="Dashboard PLTD Bach", page_icon="⚡", layout="wide")
 
 st.markdown("""
@@ -27,7 +26,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ======================== DATA SOURCES ========================
 PLTD_SHEETS = {
     'Pemaron': '1HN-X9OhLTGo5Ieu2uzBa6VHh0UlFdGTiw56yOIX5VgI',
     'Mangoli': '1agNRbhpUJRqsA91eDlDq49BKpbW5x3v-2DiAGlbdq9s',
@@ -47,58 +45,35 @@ PLTD_SHEETS = {
 }
 MASTER_PLTD_ID = '1FsaZyKs3DgJlyZkx5qqpBotNK8Z6C8GOrNeJv3I8AJA'
 MASTER_D365_ID = '1C7r0AUC3taKIMR1CVmIle5gm333F4r2VPo7lWeqeH8A'
-DELIVERY_URL = "https://bachmulti-my.sharepoint.com/:x:/g/personal/prabawa_bachgroup_co_id/IQDpLV2xOcHmS51kfDxWqHQAAUHHovDCqOPtICGu3HUp6nc?download=1"
 
-# ======================== PREVENTIVE MAP ========================
 PREVENTIVE_MAP = {
-    'LF3325': 'Oil Filter',
-    'LF777': 'Oil Filter By pass',
-    '2020PM V30-C': 'Element Water Separator',
-    'FS1006': 'Fuel Filter',
-    'WF2076': 'Water Filter',
-    '3629140': 'Cylinder head cover gasket',
-    'AF872': 'Air Filter Element',
-    'AF25278': 'Air Filter Element',
-    'AF25278 (Free)': 'Air Filter Element',
-    'AHO1135': 'Air Filter Element (Aksa)',
-    '5413003': 'V-BELT Fan Radiator',
-    '3015257': 'V-BELT (Aksa)',
-    '5412990': 'V-BELT Alternator',
-    '5PK889 / 21-3107 / 25471145': 'V-BELT Alternator',
-    '23PK2032 / 21-3110 / 25477108': 'V-BELT Fan Radiator',
-    'RIMULA R4 X 15W-40': 'Oli Shell',
-    'WCL': 'Coolant',  # <-- WCL jadi Preventive
+    'LF3325': 'Oil Filter', 'LF777': 'Oil Filter By pass',
+    '2020PM V30-C': 'Element Water Separator', 'FS1006': 'Fuel Filter',
+    'WF2076': 'Water Filter', '3629140': 'Cylinder head cover gasket',
+    'AF872': 'Air Filter Element', 'AF25278': 'Air Filter Element',
+    'AHO1135': 'Air Filter Element (Aksa)', '5413003': 'V-BELT Fan Radiator',
+    '3015257': 'V-BELT (Aksa)', '5412990': 'V-BELT Alternator',
+    'RIMULA R4 X 15W-40': 'Oli Shell', 'WCL': 'Coolant',
 }
 
 NORMALIZE_NAME = {
-    'AF25278': 'Air Filter Element',
-    'AF872': 'Air Filter Element',
-    'RIMULA R4 X 15W-40': 'Oli Shell',
-    '3057139': 'Push Rod Valve',
-    '306232220': 'Control Governor Cummins',
-    'ACC-Y': 'ACCU 12V N150 YUASA',
-    'CL900-10': 'Element Fuel Filter (10 Micron)',
-    'CL-900-10': 'Element Fuel Filter (10 Micron)',
-    'WCL': 'Coolant',
+    'AF25278': 'Air Filter Element', 'AF872': 'Air Filter Element',
+    'RIMULA R4 X 15W-40': 'Oli Shell', 'WCL': 'Coolant',
 }
 
-def normalize_material(kode, nama):
+def norm(kode, nama):
     k = str(kode).strip().upper()
-    if k in NORMALIZE_NAME:
-        return NORMALIZE_NAME[k]
+    if k in NORMALIZE_NAME: return NORMALIZE_NAME[k]
     for pk, pn in PREVENTIVE_MAP.items():
-        if k == pk.upper():
-            return pn
+        if k == pk.upper(): return pn
     return nama
 
-def is_preventive_exact(kode):
+def is_prev(kode):
     k = str(kode).strip().upper()
     for pk in PREVENTIVE_MAP:
-        if k == pk.upper():
-            return True
-        for part in re.split(r'\s*/\s*', k):
-            if part == pk.upper():
-                return True
+        if k == pk.upper(): return True
+        for p in re.split(r'\s*/\s*', k):
+            if p == pk.upper(): return True
     return False
 
 def is_valid(kode, nama):
@@ -106,31 +81,22 @@ def is_valid(kode, nama):
     if re.match(r'^\d+(\.\d+)?$', nama.strip()): return False
     return True
 
-# ======================== GSPREAD ========================
 @st.cache_resource
 def get_client():
     c = dict(st.secrets["gcp_service_account"])
     if c.get('private_key'): c['private_key'] = c['private_key'].replace('\\n', '\n')
     return gspread.service_account_from_dict(c)
 
-def retry(fn, *a, **kw):
-    for i in range(3):
-        try: return fn(*a, **kw)
-        except APIError as e:
-            if '429' in str(e) and i<2: time.sleep(2**i)
-            else: raise
-
-# ======================== LOAD ALL ========================
 @st.cache_data(ttl=1800)
 def load_all():
     cl = get_client()
     res = {'stock':pd.DataFrame(),'m1':None,'m2':None,'cik':pd.DataFrame()}
 
-    # STOK PLTD
+    # STOK
     rows = []
     for pltd, sid in PLTD_SHEETS.items():
         try:
-            sh = retry(cl.open_by_key, sid)
+            sh = cl.open_by_key(sid)
             data = sh.sheet1.get_all_values()
             if len(data)<2: continue
             for r in data[1:]:
@@ -140,17 +106,17 @@ def load_all():
                 qty_s = r[8].strip() if len(r)>8 else '0'
                 if not is_valid(kode,nama): continue
                 qty = float(qty_s.replace(',','')) if qty_s else 0.0
-                rows.append((pltd.strip().upper(), kode.upper().strip(), normalize_material(kode,nama).strip(), qty))
+                rows.append((pltd.strip().upper(), kode.upper().strip(), norm(kode,nama).strip(), qty))
         except: pass
     df = pd.DataFrame(rows, columns=['PLTD','Kode Material','Nama Material','Qty'])
     if not df.empty:
-        df['Jenis'] = df['Kode Material'].apply(lambda k: 'Preventive' if is_preventive_exact(k) else 'Corrective')
+        df['Jenis'] = df['Kode Material'].apply(lambda k: 'Preventive' if is_prev(k) else 'Corrective')
         df = df.groupby(['PLTD','Kode Material','Nama Material','Jenis'], as_index=False)['Qty'].sum()
     res['stock'] = df
 
     # MASTER
     try:
-        sh = retry(cl.open_by_key, MASTER_PLTD_ID)
+        sh = cl.open_by_key(MASTER_PLTD_ID)
         for ws in sh.worksheets():
             t = ws.title.strip().lower()
             if 'master data 1' in t:
@@ -172,7 +138,7 @@ def load_all():
                     d.columns = [str(c).strip() for c in d.columns]
                     if 'Nama PLTD' in d.columns: d.rename(columns={'Nama PLTD':'pltd'}, inplace=True)
                     if 'Durasi Kirim Darat+Laut (Hari)' in d.columns: d.rename(columns={'Durasi Kirim Darat+Laut (Hari)':'durasi_kirim'}, inplace=True)
-                    if 'pltd' in d.columns: d['pltd'] = d['pltd'].astype(str).str.strip().str.upper()
+                    if 'pltd' in d.columns: d['pltd'] = d['pltd'].str.strip().str.upper()
                     if 'durasi_kirim' in d.columns: d['durasi_kirim'] = pd.to_numeric(d['durasi_kirim'], errors='coerce').fillna(14)
                     else: d['durasi_kirim'] = 14
                     res['m2'] = d
@@ -181,13 +147,12 @@ def load_all():
 
     # CIKANDE
     try:
-        sh = retry(cl.open_by_key, MASTER_D365_ID)
+        sh = cl.open_by_key(MASTER_D365_ID)
         ws = sh.worksheet('Sheet1')
         data = ws.get_all_values()
         hrow = 0
         for i, row in enumerate(data[:5]):
-            rl = ' '.join([str(c).strip().lower() for c in row])
-            if ('nama' in rl or 'matrial' in rl) and ('cikande' in rl or 'kode' in rl):
+            if 'cikande' in ' '.join([str(c).lower() for c in row]):
                 hrow = i; break
         header = [str(c).strip().lower() for c in data[hrow]]
         i_nama = next((i for i,h in enumerate(header) if 'nama' in h or 'material' in h or 'matrial' in h), 0)
@@ -202,7 +167,7 @@ def load_all():
             try: qty = float(qty_s.replace(',','')) if qty_s else 0.0
             except: qty = 0.0
             if nama or kode:
-                crows.append({'Kode Material':kode.upper().strip(),'Nama Material':normalize_material(kode,nama).strip(),'WH Cikande':qty})
+                crows.append({'Kode Material':kode.upper().strip(),'Nama Material':norm(kode,nama).strip(),'WH Cikande':qty})
         dc = pd.DataFrame(crows)
         if not dc.empty: dc = dc.groupby(['Kode Material','Nama Material'], as_index=False)['WH Cikande'].sum()
         res['cik'] = dc
@@ -232,14 +197,13 @@ def home():
     loc['lon'] = loc['PLTD'].map(lambda x: coords.get(x,(None,None))[1])
     st.map(loc.dropna(subset=['lat']), latitude='lat', longitude='lon', zoom=4, height=350)
 
-# ======================== STOCK PAGE ========================
+# ======================== STOCK ========================
 def page_stock():
     st.title("📦 Stok Material PLTD")
     data = load_all()
     df = data['stock'].copy()
     if df.empty: st.warning("Data belum tersedia."); return
 
-    # Gabung Cikande
     cik = data['cik']
     if not cik.empty:
         df = df.merge(cik, on=['Kode Material','Nama Material'], how='left')
@@ -265,73 +229,61 @@ def page_stock():
     m1 = data['m1']
     m2 = data['m2']
 
-    # ==== SISA BULAN UNTUK PREVENTIVE ====
-    if m1 is not None and 'pltd' in m1.columns and 'kode_material' in m1.columns:
+    # ==== 1. TABEL PREVENTIVE (QTY) ====
+    st.subheader("🔵 Material Preventive")
+    if not prev.empty:
+        p = prev.pivot_table(index=['Kode Material','Nama Material'], columns='PLTD', values='Qty', aggfunc='sum', fill_value=0)
+        cik_p = prev.groupby(['Kode Material','Nama Material'])['WH Cikande'].max()
+        p = p.join(cik_p)
+        p['Total'] = p.drop(columns='WH Cikande').sum(axis=1)
+        p = p.reset_index()
+        pltd_cols = [c for c in p.columns if c not in ('Kode Material','Nama Material','WH Cikande','Total')]
+        p = p[['Kode Material','Nama Material'] + pltd_cols + ['WH Cikande','Total']]
+        cfg = {'Kode Material':st.column_config.TextColumn(pinned=True),
+               'Nama Material':st.column_config.TextColumn(pinned=True)}
+        st.dataframe(p, column_config=cfg, use_container_width=True, hide_index=True)
+    else:
+        st.info("Tidak ada data Preventive.")
+
+    # ==== 2. SISA BULAN PREVENTIVE ====
+    st.subheader("⏳ Sisa Stok Preventive dalam Bulan")
+    if not prev.empty and m1 is not None and 'pltd' in m1.columns and 'kode_material' in m1.columns:
         p1 = m1[['pltd','kode_material','keb_aktual']].copy()
-        p1['pltd'] = p1['pltd'].astype(str).str.strip().str.upper()
-        p1['kode_material'] = p1['kode_material'].astype(str).str.strip().str.upper()
-        prev = prev.merge(p1, left_on=['PLTD','Kode Material'], right_on=['pltd','kode_material'], how='left')
-        prev.drop(columns=['pltd','kode_material'], inplace=True, errors='ignore')
+        p1['pltd'] = p1['pltd'].str.strip().str.upper()
+        p1['kode_material'] = p1['kode_material'].str.strip().str.upper()
+        sisa = prev.merge(p1, left_on=['PLTD','Kode Material'], right_on=['pltd','kode_material'], how='left')
+        sisa.drop(columns=['pltd','kode_material'], inplace=True, errors='ignore')
+        sisa['Sisa Bulan'] = np.where(
+            sisa['keb_aktual'].notna() & (sisa['keb_aktual']>0),
+            (sisa['Qty'] / sisa['keb_aktual']).round(1).astype(str) + ' Bulan',
+            '0 Bulan')
+        sp = sisa.pivot_table(index=['Kode Material','Nama Material'], columns='PLTD', values='Sisa Bulan', aggfunc='first', fill_value='0 Bulan')
+        cik_s = sisa.groupby(['Kode Material','Nama Material'])['WH Cikande'].max()
+        sp = sp.join(cik_s)
+        sp = sp.reset_index()
+        pltd_cols_s = [c for c in sp.columns if c not in ('Kode Material','Nama Material','WH Cikande')]
+        sp = sp[['Kode Material','Nama Material'] + pltd_cols_s + ['WH Cikande']]
+        cfg_s = {'Kode Material':st.column_config.TextColumn(pinned=True),
+                 'Nama Material':st.column_config.TextColumn(pinned=True)}
+        st.dataframe(sp, column_config=cfg_s, use_container_width=True, hide_index=True)
     else:
-        prev['keb_aktual'] = np.nan
+        st.info("Data Sisa Bulan tidak tersedia (Master 1 tidak ada atau kolom tidak cocok).")
 
-    if m2 is not None and 'pltd' in m2.columns and 'durasi_kirim' in m2.columns:
-        p2 = m2[['pltd','durasi_kirim']].copy()
-        p2['pltd'] = p2['pltd'].astype(str).str.strip().str.upper()
-        prev = prev.merge(p2, left_on='PLTD', right_on='pltd', how='left')
-        prev.drop(columns=['pltd'], inplace=True, errors='ignore')
+    # ==== 3. CORRECTIVE ====
+    st.subheader("🟠 Material Corrective")
+    if not corr.empty:
+        p = corr.pivot_table(index=['Kode Material','Nama Material'], columns='PLTD', values='Qty', aggfunc='sum', fill_value=0)
+        cik_c = corr.groupby(['Kode Material','Nama Material'])['WH Cikande'].max()
+        p = p.join(cik_c)
+        p['Total'] = p.drop(columns='WH Cikande').sum(axis=1)
+        p = p.reset_index()
+        pltd_cols = [c for c in p.columns if c not in ('Kode Material','Nama Material','WH Cikande','Total')]
+        p = p[['Kode Material','Nama Material'] + pltd_cols + ['WH Cikande','Total']]
+        cfg = {'Kode Material':st.column_config.TextColumn(pinned=True),
+               'Nama Material':st.column_config.TextColumn(pinned=True)}
+        st.dataframe(p, column_config=cfg, use_container_width=True, hide_index=True)
     else:
-        prev['durasi_kirim'] = 14
-    prev['durasi_kirim'] = prev['durasi_kirim'].fillna(14)
-
-    # Hitung Sisa Bulan
-    prev['Sisa Bulan Num'] = np.where(
-        prev['keb_aktual'].notna() & (prev['keb_aktual']>0),
-        np.round(prev['Qty'] / prev['keb_aktual'], 1), 0.0)
-    prev['Sisa Bulan'] = prev['Sisa Bulan Num'].apply(lambda x: f"{x} Bulan" if x != 0 else "0 Bulan")
-
-    # Status
-    prev['Status'] = np.where(
-        prev['keb_aktual'].isna() | (prev['keb_aktual']<=0), '⚪',
-        np.where(prev['Sisa Bulan Num']*30.5 < prev['durasi_kirim'], '🔴',
-                 np.where(prev['Sisa Bulan Num']*30.5 < 1.5*prev['durasi_kirim'], '🟡', '🟢')))
-
-    def tampil(data, judul, ikon):
-        if data.empty: st.info(f"Tidak ada data {judul}."); return
-        st.subheader(f"{ikon} Material {judul}")
-        if judul == 'Preventive':
-            # Pivot Sisa Bulan
-            p = data.pivot_table(index=['Kode Material','Nama Material'], columns='PLTD', values='Sisa Bulan', aggfunc='first', fill_value='0 Bulan')
-            cik = data.groupby(['Kode Material','Nama Material'])['WH Cikande'].max()
-            p = p.join(cik)
-            # Tambahkan kolom Status (rata-rata status, tapi kita ambil worst case)
-            # Untuk sederhana, kita tidak tampilkan status di pivot
-            p = p.reset_index()
-            pltd_cols = [c for c in p.columns if c not in ('Kode Material','Nama Material','WH Cikande')]
-            p = p[['Kode Material','Nama Material'] + pltd_cols + ['WH Cikande']]
-            cfg = {'Kode Material':st.column_config.TextColumn(pinned=True),
-                   'Nama Material':st.column_config.TextColumn(pinned=True)}
-            st.dataframe(p, column_config=cfg, use_container_width=True, hide_index=True)
-
-            # Tabel Status
-            st.subheader("🔴🟡🟢 Status Lead Time")
-            st.dataframe(data[['PLTD','Kode Material','Nama Material','Qty','keb_aktual','Sisa Bulan','durasi_kirim','Status']].drop_duplicates(),
-                         column_config={'keb_aktual':'Keb. Aktual','durasi_kirim':'Durasi Kirim (hari)'},
-                         use_container_width=True, hide_index=True)
-        else:
-            p = data.pivot_table(index=['Kode Material','Nama Material'], columns='PLTD', values='Qty', aggfunc='sum', fill_value=0)
-            cik = data.groupby(['Kode Material','Nama Material'])['WH Cikande'].max()
-            p = p.join(cik)
-            p['Total'] = p.drop(columns='WH Cikande').sum(axis=1)
-            p = p.reset_index()
-            pltd_cols = [c for c in p.columns if c not in ('Kode Material','Nama Material','WH Cikande','Total')]
-            p = p[['Kode Material','Nama Material'] + pltd_cols + ['WH Cikande','Total']]
-            cfg = {'Kode Material':st.column_config.TextColumn(pinned=True),
-                   'Nama Material':st.column_config.TextColumn(pinned=True)}
-            st.dataframe(p, column_config=cfg, use_container_width=True, hide_index=True)
-
-    tampil(prev, "Preventive", "🔵")
-    tampil(corr, "Corrective", "🟠")
+        st.info("Tidak ada data Corrective.")
 
 def page_analisis(): st.title("📊 Analisis Lanjutan"); st.info("Segera hadir.")
 def page_pemakaian(): st.title("🔥 Pemakaian Material"); st.info("Segera hadir.")
