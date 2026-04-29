@@ -12,7 +12,6 @@ import time
 
 st.set_page_config(page_title="Dashboard PLTD Bach", page_icon="⚡", layout="wide")
 
-# ======================== STYLING ========================
 st.markdown("""
 <style>
     .main { background-color: #F8F9FA; }
@@ -120,8 +119,7 @@ def load_all():
         sh = cl.open_by_key(MASTER_PLTD_ID)
         for ws in sh.worksheets():
             t = ws.title.strip().lower()
-            # Deteksi lebih fleksibel: mengandung "data" dan "1"
-            if ('data' in t or 'mater' in t) and '1' in t:
+            if ('master' in t or 'mater' in t) and '1' in t:
                 try:
                     d = get_as_dataframe(ws, evaluate_formulas=True)
                     d.columns = [str(c).strip() for c in d.columns]
@@ -137,7 +135,7 @@ def load_all():
                         d['keb_aktual'] = pd.to_numeric(d['keb_aktual'], errors='coerce').fillna(0)
                     res['m1'] = d
                 except: pass
-            if ('data' in t or 'mater' in t) and '2' in t:
+            if ('master' in t or 'mater' in t) and '2' in t:
                 try:
                     d = get_as_dataframe(ws, evaluate_formulas=True)
                     d.columns = [str(c).strip() for c in d.columns]
@@ -251,7 +249,7 @@ def page_stock():
     else:
         st.info("Tidak ada data Preventive.")
 
-    # ==== 2. SISA BULAN PREVENTIVE ====
+    # ==== 2. SISA BULAN PREVENTIVE (TANPA WH Cikande) ====
     st.subheader("⏳ Sisa Stok Preventive dalam Bulan")
 
     if not prev.empty and m1 is not None and 'pltd' in m1.columns and 'kode_material' in m1.columns and 'keb_aktual' in m1.columns:
@@ -262,14 +260,13 @@ def page_stock():
         sisa = prev.merge(p1, left_on=['PLTD','Kode Material'], right_on=['pltd','kode_material'], how='left')
         sisa.drop(columns=['pltd','kode_material'], inplace=True, errors='ignore')
 
-        # Hitung Sisa Bulan = ROUNDDOWN(Qty / keb_aktual, 1)
         sisa['Sisa Bulan'] = np.where(
             sisa['keb_aktual'].notna() & (sisa['keb_aktual'] > 0),
             np.floor(sisa['Qty'] / sisa['keb_aktual'] * 10) / 10,
             0.0
         )
 
-        # Pivot Sisa Bulan
+        # Pivot Sisa Bulan (TANPA WH Cikande)
         sp = sisa.pivot_table(
             index=['Kode Material','Nama Material'], 
             columns='PLTD', 
@@ -277,51 +274,31 @@ def page_stock():
             aggfunc='first', 
             fill_value=0.0
         )
-        
-        # Tambahkan WH Cikande
-        cik_s = sisa.groupby(['Kode Material','Nama Material'])['WH Cikande'].max()
-        sp = sp.join(cik_s)
         sp = sp.reset_index()
         
-        # Urutkan kolom
-        pltd_cols_s = [c for c in sp.columns if c not in ('Kode Material','Nama Material','WH Cikande')]
-        sp = sp[['Kode Material','Nama Material'] + pltd_cols_s + ['WH Cikande']]
+        # Hanya kolom PLTD, tanpa WH Cikande
+        pltd_cols_s = [c for c in sp.columns if c not in ('Kode Material','Nama Material')]
+        sp = sp[['Kode Material','Nama Material'] + pltd_cols_s]
 
         # Konfigurasi kolom
         cfg_s = {
             'Kode Material': st.column_config.TextColumn(pinned=True),
             'Nama Material': st.column_config.TextColumn(pinned=True),
         }
-        
-        # Tambahkan format untuk kolom PLTD (1 desimal)
         for col in pltd_cols_s:
             cfg_s[col] = st.column_config.NumberColumn(format="%.1f")
         
-        # Highlight nilai ≤ 1.5 menggunakan Styler
+        # Highlight nilai ≤ 1.5
         def highlight_low(val):
             if isinstance(val, (int, float)) and val > 0 and val <= 1.5:
                 return 'background-color: #ffcccc; color: #cc0000; font-weight: bold;'
             return ''
         
-        # Terapkan styling
         styled_df = sp.style.map(highlight_low, subset=pltd_cols_s)
-        
-        # Tampilkan dataframe dengan styling
         st.dataframe(styled_df, column_config=cfg_s, use_container_width=True, hide_index=True)
         
     else:
-        with st.expander("🔍 Debug Info"):
-            st.write("**M1 tersedia:**", m1 is not None)
-            if m1 is not None:
-                st.write("**Kolom M1:**", m1.columns.tolist())
-                st.write("**Sample pltd:**", m1['pltd'].unique()[:5] if 'pltd' in m1.columns else 'TIDAK ADA')
-                st.write("**Sample kode_material:**", m1['kode_material'].unique()[:5] if 'kode_material' in m1.columns else 'TIDAK ADA')
-                st.write("**Sample keb_aktual:**", m1['keb_aktual'].head() if 'keb_aktual' in m1.columns else 'TIDAK ADA')
-            else:
-                st.write("M1 adalah None. Sheet tidak ditemukan.")
-            st.write("**Data Preventif tersedia:**", not prev.empty)
-            st.write("**Jumlah baris Preventif:**", len(prev))
-        st.warning("Data Sisa Bulan tidak tersedia. Buka expander 'Debug Info' untuk detail.")
+        st.info("Data Sisa Bulan tidak tersedia (periksa sheet Master data 1).")
 
     # ==== 3. CORRECTIVE ====
     st.subheader("🟠 Material Corrective")
