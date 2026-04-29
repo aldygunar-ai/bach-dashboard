@@ -87,7 +87,7 @@ def get_client():
     if c.get('private_key'): c['private_key'] = c['private_key'].replace('\\n', '\n')
     return gspread.service_account_from_dict(c)
 
-@st.cache_data(ttl=1800)
+@st.cache_data(ttl=600)  # cache 10 menit untuk debug
 def load_all():
     cl = get_client()
     res = {'stock':pd.DataFrame(),'m1':None,'m2':None,'cik':pd.DataFrame()}
@@ -122,16 +122,21 @@ def load_all():
             if 'master data 1' in t:
                 try:
                     d = get_as_dataframe(ws, evaluate_formulas=True)
+                    # DEBUG: simpan kolom asli
+                    res['m1_raw_cols'] = [str(c).strip() for c in d.columns]
                     d.columns = [str(c).strip() for c in d.columns]
-                    rm = {'Nama Material':'nama_material','Kode Material':'kode_material',
-                          'Nama PLTD':'pltd','Harga D365':'harga',
-                          'Kebutuhan Perbulan Sesuai CF PM':'keb_pm',
-                          'Kebutuhan Perbulan Sesuai Aktual FC':'keb_aktual'}
-                    d.rename(columns={k:v for k,v in rm.items() if k in d.columns}, inplace=True)
+                    # Cari kolom Nama PLTD (bisa "Nama PLTD" atau "PLTD" atau "pltd")
+                    pltd_col = next((c for c in d.columns if 'pltd' in c.lower() or 'nama pltd' in c.lower()), None)
+                    kode_col = next((c for c in d.columns if 'kode material' in c.lower() or 'kode_material' in c.lower()), None)
+                    aktual_col = next((c for c in d.columns if 'aktual' in c.lower() and ('fc' in c.lower() or 'cf' in c.lower())), None)
+                    if pltd_col: d.rename(columns={pltd_col:'pltd'}, inplace=True)
+                    if kode_col: d.rename(columns={kode_col:'kode_material'}, inplace=True)
+                    if aktual_col: d.rename(columns={aktual_col:'keb_aktual'}, inplace=True)
                     for col in ['pltd','kode_material']:
                         if col in d.columns: d[col] = d[col].astype(str).str.strip().str.upper()
                     res['m1'] = d
-                except: pass
+                except Exception as e:
+                    res['m1_error'] = str(e)
             if 'master data 2' in t:
                 try:
                     d = get_as_dataframe(ws, evaluate_formulas=True)
@@ -227,7 +232,6 @@ def page_stock():
     corr = f[f['Jenis']=='Corrective'].copy()
 
     m1 = data['m1']
-    m2 = data['m2']
 
     # ==== 1. TABEL PREVENTIVE (QTY) ====
     st.subheader("🔵 Material Preventive")
@@ -247,21 +251,34 @@ def page_stock():
 
     # ==== 2. SISA BULAN PREVENTIVE ====
     st.subheader("⏳ Sisa Stok Preventive dalam Bulan")
-    if not prev.empty and m1 is not None and 'pltd' in m1.columns and 'kode_material' in m1.columns:
+
+    # DEBUG: tampilkan info M1
+    if 'm1_raw_cols' in data:
+        with st.expander("Debug: Master 1 Info"):
+            st.write("Kolom asli M1:", data['m1_raw_cols'])
+            if m1 is not None:
+                st.write("Kolom setelah rename:", m1.columns.tolist())
+                st.write("Sample pltd:", m1['pltd'].unique()[:5] if 'pltd' in m1.columns else 'TIDAK ADA')
+                st.write("Sample kode_material:", m1['kode_material'].unique()[:5] if 'kode_material' in m1.columns else 'TIDAK ADA')
+                st.write("Sample keb_aktual:", m1['keb_aktual'].head() if 'keb_aktual' in m1.columns else 'TIDAK ADA')
+            else:
+                st.write("M1 adalah None")
+    if 'm1_error' in data:
+        st.error(f"Error load M1: {data['m1_error']}")
+
+    if not prev.empty and m1 is not None and 'pltd' in m1.columns and 'kode_material' in m1.columns and 'keb_aktual' in m1.columns:
         p1 = m1[['pltd','kode_material','keb_aktual']].copy()
         p1['pltd'] = p1['pltd'].str.strip().str.upper()
         p1['kode_material'] = p1['kode_material'].str.strip().str.upper()
         sisa = prev.merge(p1, left_on=['PLTD','Kode Material'], right_on=['pltd','kode_material'], how='left')
         sisa.drop(columns=['pltd','kode_material'], inplace=True, errors='ignore')
 
-        # Hitung Sisa Bulan = ROUNDDOWN(Qty / keb_aktual, 1)
         sisa['Sisa Bulan'] = np.where(
             sisa['keb_aktual'].notna() & (sisa['keb_aktual'] > 0),
-            np.floor(sisa['Qty'] / sisa['keb_aktual'] * 10) / 10,  # round down 1 desimal
+            np.floor(sisa['Qty'] / sisa['keb_aktual'] * 10) / 10,
             0.0
         )
 
-        # Pivot Sisa Bulan
         sp = sisa.pivot_table(index=['Kode Material','Nama Material'], columns='PLTD', values='Sisa Bulan', aggfunc='first', fill_value=0.0)
         cik_s = sisa.groupby(['Kode Material','Nama Material'])['WH Cikande'].max()
         sp = sp.join(cik_s)
@@ -269,20 +286,17 @@ def page_stock():
         pltd_cols_s = [c for c in sp.columns if c not in ('Kode Material','Nama Material','WH Cikande')]
         sp = sp[['Kode Material','Nama Material'] + pltd_cols_s + ['WH Cikande']]
 
-        # Highlight nilai <= 1.5 dengan warna merah
         def highlight_low(val):
-            if isinstance(val, (int, float)):
-                if val <= 1.5 and val > 0:
-                    return 'background-color: #ffcccc'
+            if isinstance(val, (int, float)) and 0 < val <= 1.5:
+                return 'background-color: #ffcccc'
             return ''
 
         styled_sp = sp.style.applymap(highlight_low, subset=pltd_cols_s)
-
         cfg_s = {'Kode Material':st.column_config.TextColumn(pinned=True),
                  'Nama Material':st.column_config.TextColumn(pinned=True)}
         st.dataframe(styled_sp, column_config=cfg_s, use_container_width=True, hide_index=True)
     else:
-        st.info("Data Sisa Bulan tidak tersedia (Master 1 tidak ada atau kolom tidak cocok).")
+        st.info("Data Sisa Bulan tidak tersedia. Buka expander 'Debug: Master 1 Info' di atas untuk melihat detail.")
 
     # ==== 3. CORRECTIVE ====
     st.subheader("🟠 Material Corrective")
