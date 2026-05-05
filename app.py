@@ -350,7 +350,7 @@ def page_stock():
 
 # ======================== ANALISIS ========================
 def page_analisis():
-    st.title("📊 Analisis Pemakaian Material")
+    st.title("📊 Analisis Pemakaian Material - DEBUG")
     data = load_all()
     df_pakai = data.get('pemakaian', pd.DataFrame()).copy()
     
@@ -358,125 +358,47 @@ def page_analisis():
         st.warning("Data pemakaian (sheet Gabungan) belum tersedia.")
         return
 
-    # Normalisasi nama
-    nama_map = {
-        'water coollant reco-cool - drum': 'WATER COOLLANT RECO-COOL MULTIROAD-DRUM',
-        'filter udara af872': 'FILTER UDARA AF872',
-        'air filter element af872': 'FILTER UDARA AF872',
-        'gasket cylinder head 3629140': 'GASKET CYLINDER HEAD 3629140',
-        'element racor 2020pm parker': 'ELEMENT RACOR 2020PM PARKER',
-        'oil filter lf777 fleet gruad': 'OIL FILTER LF777 FLEET GRUAD',
-        'oil shell rimula r3mv 15w-40 (drum @ 209 ltr)': 'OIL SHELL RIMULA R3MV 15W-40 (DRUM @ 209 LTR)',
-    }
-    df_pakai['Nama Material'] = df_pakai['Nama Material'].str.strip().str.lower()
-    df_pakai['Nama Material'] = df_pakai['Nama Material'].apply(lambda x: nama_map.get(x, x.upper()))
-
-    # Numerik
-    for col in ['Masuk','Keluar','Stok','TOTAL_COST']:
-        if col in df_pakai.columns:
-            df_pakai[col] = pd.to_numeric(df_pakai[col], errors='coerce').fillna(0)
-
-    # Tanggal
-    if 'Tanggal' in df_pakai.columns:
-        df_pakai['Tanggal'] = pd.to_datetime(df_pakai['Tanggal'], errors='coerce')
-        df_pakai = df_pakai.dropna(subset=['Tanggal'])
-        df_pakai['Tahun'] = df_pakai['Tanggal'].dt.year.astype(int).astype(str)
-        bulan_map = {1:'Jan',2:'Feb',3:'Mar',4:'Apr',5:'Mei',6:'Jun',7:'Jul',8:'Ags',9:'Sep',10:'Okt',11:'Nov',12:'Des'}
-        df_pakai['Periode'] = df_pakai['Tanggal'].dt.month.map(bulan_map)
-        df_pakai['BulanStr'] = df_pakai['Tanggal'].dt.strftime('%Y-%m')
-
-    # Sidebar
-    st.sidebar.header("Filter Analisis")
-    nama_opts = sorted(df_pakai['Nama Material'].unique().astype(str))
-    sel_nama = st.sidebar.multiselect("Nama Material", nama_opts, default=[])
-    gudang_opts = sorted(df_pakai['Gudang'].unique().astype(str)) if 'Gudang' in df_pakai.columns else []
-    sel_gudang = st.sidebar.multiselect("Gudang", gudang_opts, default=[])
-    jobtype_opts = sorted(df_pakai['JobType'].unique().astype(str)) if 'JobType' in df_pakai.columns else []
-    sel_jobtype = st.sidebar.multiselect("JobType", jobtype_opts, default=[])
-    tahun_opts = sorted(df_pakai['Tahun'].astype(str).unique())
-    sel_tahun = st.sidebar.multiselect("Tahun", tahun_opts, default=[])
-    periode_opts = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Ags','Sep','Okt','Nov','Des']
-    sel_periode = st.sidebar.multiselect("Periode (Bulan)", periode_opts, default=[])
-
-    f = df_pakai.copy()
-    if sel_nama: f = f[f['Nama Material'].astype(str).isin(sel_nama)]
-    if sel_gudang: f = f[f['Gudang'].astype(str).isin(sel_gudang)]
-    if sel_jobtype: f = f[f['JobType'].astype(str).isin(sel_jobtype)]
-    if sel_tahun: f = f[f['Tahun'].astype(str).isin(sel_tahun)]
-    if sel_periode: f = f[f['Periode'].astype(str).isin(sel_periode)]
-
-    # PIVOT: TOTAL_COST sudah = Keluar × HARGA_D365
-    pivot_cost = f.pivot_table(
-        index='Nama Material',
-        values=['Keluar', 'TOTAL_COST'],
-        aggfunc={'Keluar': 'sum', 'TOTAL_COST': 'sum'}
-    )
-    grand_total_cost = pivot_cost['TOTAL_COST'].sum()
-
-    # KPI
-    st.subheader("📈 Ringkasan Pemakaian")
-    k1,k2,k3,k4 = st.columns(4)
-    k1.metric("Total Transaksi", len(f))
-    k2.metric("Total Keluar", f"{f['Keluar'].sum():,.0f}")
-    k3.metric("Total Masuk", f"{f['Masuk'].sum():,.0f}" if 'Masuk' in f.columns else "0")
-    k4.metric("💰 Grand Total Cost", f"Rp {grand_total_cost:,.0f}")
-    st.markdown("---")
-
-    # Tren
-    st.subheader("📈 Tren Pemakaian Material")
-    if 'BulanStr' in f.columns:
-        trend = f.groupby('BulanStr').agg(Masuk=('Masuk','sum'), Keluar=('Keluar','sum')).reset_index().sort_values('BulanStr')
-        if not trend.empty:
-            fig1 = go.Figure()
-            fig1.add_trace(go.Scatter(x=trend['BulanStr'], y=trend['Masuk'], mode='lines+markers+text', name='Inbound',
-                                      line=dict(color='#4B8BBE',width=2), marker=dict(size=8),
-                                      text=trend['Masuk'].apply(lambda x: f'{x:,.0f}'), textposition='top center', textfont=dict(size=10)))
-            fig1.add_trace(go.Scatter(x=trend['BulanStr'], y=trend['Keluar'], mode='lines+markers+text', name='Outbound',
-                                      line=dict(color='#E67E22',width=2), marker=dict(size=8),
-                                      text=trend['Keluar'].apply(lambda x: f'{x:,.0f}'), textposition='top center', textfont=dict(size=10)))
-            fig1.update_layout(height=400, xaxis_title='Periode', yaxis_title='Quantity',
-                              legend=dict(orientation='h', yanchor='bottom', y=-0.25, xanchor='center', x=0.5), xaxis=dict(tickangle=-45))
-            st.plotly_chart(fig1, use_container_width=True)
-    st.markdown("---")
-
-    # TOP 10 INBOUND VS OUTBOUND
-    st.subheader("📥📤 TOP 10 Material: Inbound vs Outbound")
-    top_10 = f.groupby('Nama Material').agg(Masuk=('Masuk','sum'), Keluar=('Keluar','sum')).sum(axis=1).nlargest(10).index.tolist()
-    agg = f[f['Nama Material'].isin(top_10)].groupby('Nama Material').agg(Masuk=('Masuk','sum'), Keluar=('Keluar','sum')).reset_index().sort_values('Masuk', ascending=True)
-    if not agg.empty:
-        fig2 = go.Figure()
-        fig2.add_trace(go.Bar(y=agg['Nama Material'], x=agg['Masuk'], name='Inbound', orientation='h', marker=dict(color='#4B8BBE'),
-                              text=agg['Masuk'].apply(lambda x: f'{x:,.0f}'), textposition='outside'))
-        fig2.add_trace(go.Bar(y=agg['Nama Material'], x=agg['Keluar'], name='Outbound', orientation='h', marker=dict(color='#E67E22'),
-                              text=agg['Keluar'].apply(lambda x: f'{x:,.0f}'), textposition='outside'))
-        fig2.update_layout(barmode='group', height=400, margin=dict(l=200, r=80, t=30, b=60),
-                          legend=dict(orientation='h', yanchor='bottom', y=-0.25, xanchor='center', x=0.5))
-        st.plotly_chart(fig2, use_container_width=True)
-    st.markdown("---")
-
-    # COST - TOP 10
-    st.subheader("💰 TOP 10 Cost Material")
-    top_cost = pivot_cost[pivot_cost['TOTAL_COST'] > 0].nlargest(10, 'TOTAL_COST').sort_values('TOTAL_COST', ascending=True)
-    if not top_cost.empty:
-        fig3 = go.Figure()
-        fig3.add_trace(go.Bar(
-            y=top_cost.index,
-            x=top_cost['TOTAL_COST'],
-            orientation='h',
-            marker=dict(color='#27AE60'),
-            text=top_cost['TOTAL_COST'].apply(lambda x: f'Rp {x:,.0f}'),
-            textposition='outside'
-        ))
-        fig3.update_layout(height=380, margin=dict(l=250, r=100, t=30, b=20))
-        st.plotly_chart(fig3, use_container_width=True)
-    st.markdown("---")
-
-    # TABEL DETAIL
-    st.subheader("📋 Detail Pemakaian Material")
-    cols = ['Tanggal','Nama Material','Masuk','Keluar','Stok','Gudang','Keterangan','Transaksi','JobType','TOTAL_COST']
-    cols = [c for c in cols if c in f.columns]
-    if 'Tanggal' in f.columns: f = f.sort_values('Tanggal', ascending=False)
-    st.dataframe(f[cols], use_container_width=True, hide_index=True, height=400)
+    # ==== DEBUG: LIHAT DATA MENTAH ====
+    with st.expander("🔍 DEBUG: Data Mentah", expanded=True):
+        st.write(f"**Jumlah baris:** {len(df_pakai)}")
+        st.write(f"**Kolom:** {df_pakai.columns.tolist()}")
+        
+        # Filter hanya yang ada keluar dan HARGA_D365
+        sample = df_pakai[(df_pakai['Keluar'] > 0) & (df_pakai['HARGA_D365'] > 0)]
+        st.write(f"**Baris dengan Keluar > 0 dan HARGA_D365 > 0:** {len(sample)}")
+        
+        # Tampilkan beberapa baris untuk OIL FILTER LF3325
+        oil_filter = df_pakai[df_pakai['Nama Material'].str.contains('LF3325', case=False, na=False)]
+        st.write(f"**Sample data OIL FILTER LF3325 ({len(oil_filter)} baris):**")
+        st.dataframe(oil_filter[['Tanggal','Nama Material','Keluar','HARGA_D365','TOTAL_COST']].head(20), use_container_width=True)
+        
+        # Tampilkan TOTAL_COST untuk OIL FILTER
+        if not oil_filter.empty:
+            total_keluar = oil_filter['Keluar'].sum()
+            total_cost = oil_filter['TOTAL_COST'].sum()
+            avg_harga = oil_filter['HARGA_D365'].mean()
+            st.write(f"**OIL FILTER LF3325:** Total Keluar={total_keluar:,.0f}, Avg HARGA_D365={avg_harga:,.2f}, Total Cost={total_cost:,.0f}")
+        
+        # Tampilkan untuk OLI RIMULA
+        oli = df_pakai[df_pakai['Nama Material'].str.contains('RIMULA R4', case=False, na=False)]
+        st.write(f"**Sample data OLI RIMULA R4 ({len(oli)} baris):**")
+        st.dataframe(oli[['Tanggal','Nama Material','Keluar','HARGA_D365','TOTAL_COST']].head(20), use_container_width=True)
+        if not oli.empty:
+            total_keluar = oli['Keluar'].sum()
+            total_cost = oli['TOTAL_COST'].sum()
+            avg_harga = oli['HARGA_D365'].mean()
+            st.write(f"**OLI RIMULA R4:** Total Keluar={total_keluar:,.0f}, Avg HARGA_D365={avg_harga:,.2f}, Total Cost={total_cost:,.0f}")
+        
+        # PIVOT MANUAL
+        st.write("**PIVOT MANUAL (TOP 10 by Cost):**")
+        pivot_check = df_pakai.groupby('Nama Material').agg(
+            Total_Keluar=('Keluar','sum'),
+            Avg_Harga=('HARGA_D365','mean'),
+            Total_Cost=('TOTAL_COST','sum')
+        ).nlargest(10, 'Total_Cost')
+        st.dataframe(pivot_check, use_container_width=True)
+    
+    # ... lanjutkan dengan tampilan normal di bawah ...
 
 def page_pemakaian(): st.title("🔥 Pemakaian Material"); st.info("Segera hadir.")
 def page_transaksi(): st.title("📊 Transaksi Project"); st.info("Segera hadir.")
