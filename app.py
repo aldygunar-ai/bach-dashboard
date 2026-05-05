@@ -394,8 +394,9 @@ def page_analisis():
         'modul 8610 deepsea': 'MODUL 8610 DEEPSEA',
     }
     
-    df_pakai['Nama Material'] = df_pakai['Nama Material'].str.strip().str.lower()
-    df_pakai['Nama Material'] = df_pakai['Nama Material'].apply(lambda x: nama_map.get(x, x.upper()))
+    # ==== NORMALISASI: HANYA LOWERCASE + STRIP, TANPA MAPPING RUMIT ====
+    df_pakai['Nama Material'] = df_pakai['Nama Material'].str.strip().str.upper()
+
     
     # Setelah normalisasi, gabungkan data yang sama
     df_pakai = df_pakai.groupby(['Tanggal','Nama Material','Gudang','Keterangan','Transaksi','JobType'], as_index=False).agg({
@@ -406,8 +407,8 @@ def page_analisis():
         'TOTAL_COST': 'sum'
     })
 
-        # ==== DEBUG: Setelah Normalisasi ====
-    with st.expander("🔍 DEBUG: Setelah Normalisasi", expanded=True):
+    # ==== DEBUG: DATA ASLI ====
+    with st.expander("🔍 DEBUG: Data Asli (TOP 30 by Cost)", expanded=True):
         pivot_all = df_pakai.groupby('Nama Material').agg(
             Total_Keluar=('Keluar','sum'),
             Total_Cost=('TOTAL_COST','sum')
@@ -415,7 +416,7 @@ def page_analisis():
         
         st.write(f"**Grand Total Cost:** Rp {pivot_all['Total_Cost'].sum():,.0f}")
         st.write(f"**Jumlah material unik:** {len(pivot_all)}")
-        st.dataframe(pivot_all.head(20), use_container_width=True)
+        st.dataframe(pivot_all.head(30), use_container_width=True)
         
     # Numerik
     for col in ['Masuk','Keluar','Stok','TOTAL_COST']:
