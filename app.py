@@ -178,7 +178,7 @@ def load_all():
         res['cik'] = dc
     except: pass
 
-    # PEMAKAIAN (SHEET GABUNGAN)
+    # PEMAKAIAN (SHEET GABUNGAN) - PERBAIKI HARGA_D365
     try:
         sh = cl.open_by_key(MASTER_GABUNGAN_ID)
         ws = sh.worksheet('Gabungan')
@@ -197,16 +197,15 @@ def load_all():
                 if len(r) < 2: continue
                 if not any(str(c).strip() for c in r[:5]): continue
                 tanggal = r[0].strip() if len(r) > 0 else ''
-                masuk = r[1].strip() if len(r) > 1 else '0'      # Kolom B
-                keluar = r[2].strip() if len(r) > 2 else '0'     # Kolom C
-                stok = r[3].strip() if len(r) > 3 else '0'       # Kolom D
-                keterangan = r[4].strip() if len(r) > 4 else ''  # Kolom E
-                transaksi = r[7].strip() if len(r) > 7 else ''   # Kolom H
-                nama_material = r[8].strip() if len(r) > 8 else ''  # Kolom I
-                jobtype = r[9].strip() if len(r) > 9 else ''     # Kolom J
-                gudang = r[11].strip() if len(r) > 11 else ''    # Kolom L
-                harga = r[14].strip() if len(r) > 14 else '0'   # Kolom O (HARGA D365)
-                total = r[15].strip() if len(r) > 15 else '0'   # Kolom P (TOTAL)
+                masuk = r[1].strip() if len(r) > 1 else '0'
+                keluar = r[2].strip() if len(r) > 2 else '0'
+                stok = r[3].strip() if len(r) > 3 else '0'
+                keterangan = r[4].strip() if len(r) > 4 else ''
+                transaksi = r[7].strip() if len(r) > 7 else ''
+                nama_material = r[8].strip() if len(r) > 8 else ''
+                jobtype = r[9].strip() if len(r) > 9 else ''
+                gudang = r[11].strip() if len(r) > 11 else ''
+                harga_raw = r[14].strip() if len(r) > 14 else '0'  # Kolom O
                 
                 if nama_material:
                     try: m = float(masuk.replace(',','')) if masuk else 0.0
@@ -215,12 +214,23 @@ def load_all():
                     except: k = 0.0
                     try: s = float(stok.replace(',','')) if stok else 0.0
                     except: s = 0.0
-                    try: h = float(harga.replace(',','')) if harga else 0.0
-                    except: h = 0.0
-                    try: t = float(total.replace(',','')) if total else 0.0
-                    except: t = 0.0
                     
-                    # HITUNG TOTAL = KELUAR × HARGA_D365 (bukan pakai kolom P)
+                    # PERBAIKI HARGA_D365: hapus titik sebagai pemisah ribuan
+                    # Contoh: "167.506" -> 167506
+                    try:
+                        # Cek apakah mengandung titik (pemisah ribuan)
+                        if '.' in harga_raw and ',' not in harga_raw:
+                            # Hapus titik, parse sebagai float
+                            h = float(harga_raw.replace('.', ''))
+                        elif ',' in harga_raw:
+                            # Koma sebagai desimal
+                            h = float(harga_raw.replace(',', '.'))
+                        else:
+                            h = float(harga_raw)
+                    except:
+                        h = 0.0
+                    
+                    # HITUNG TOTAL = KELUAR × HARGA_D365
                     total_cost = k * h
                     
                     p_rows.append({
@@ -241,7 +251,6 @@ def load_all():
                 df_p['Tanggal'] = pd.to_datetime(df_p['Tanggal'], errors='coerce')
             res['pemakaian'] = df_p
     except: pass
-
     return res
 
 # ======================== HOME ========================
