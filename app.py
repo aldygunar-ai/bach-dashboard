@@ -358,19 +358,65 @@ def page_analisis():
         st.warning("Data pemakaian (sheet Gabungan) belum tersedia.")
         return
 
-    # Normalisasi nama
+    # Normalisasi nama - GABUNGKAN variasi nama
     nama_map = {
-        'water coollant reco-cool - drum': 'WATER COOLLANT RECO-COOL MULTIROAD-DRUM',
+        'water coollant reco-cool - drum': 'WATER COOLLANT RECO-COOL',
+        'water coollant reco-cool multiroad-drum': 'WATER COOLLANT RECO-COOL',
+        'water coollant reco-cool': 'WATER COOLLANT RECO-COOL',
         'filter udara af872': 'FILTER UDARA AF872',
         'air filter element af872': 'FILTER UDARA AF872',
+        'filter udara af 25278': 'FILTER UDARA AF25278',
+        'filter udara af25278': 'FILTER UDARA AF25278',
         'gasket cylinder head 3629140': 'GASKET CYLINDER HEAD 3629140',
-        'element racor 2020pm parker': 'ELEMENT RACOR 2020PM PARKER',
-        'oil filter lf777 fleet gruad': 'OIL FILTER LF777 FLEET GRUAD',
-        'oil shell rimula r3mv 15w-40 (drum @ 209 ltr)': 'OIL SHELL RIMULA R3MV 15W-40 (DRUM @ 209 LTR)',
+        'gasket cylider head 3629140': 'GASKET CYLINDER HEAD 3629140',
+        'filter separator fs 1006 fleetguard': 'FILTER SEPARATOR FS1006',
+        'element racor 2020pm parker': 'ELEMENT RACOR 2020PM',
+        'element racor 2020pm fleetguard': 'ELEMENT RACOR 2020PM',
+        'oil filter lf3325 fleetguard': 'OIL FILTER LF3325',
+        'oil filter lf777 fleet gruad': 'OIL FILTER LF777',
+        'oil filter lf777 fleetguard': 'OIL FILTER LF777',
+        'coolant filter wf2076 fleetguard': 'COOLANT FILTER WF2076',
+        'v-belt 5413003 cummins': 'V-BELT 5413003',
+        'v-belt 5412990 cummins': 'V-BELT 5412990',
+        'v-belt 3015257 cummins': 'V-BELT 3015257',
+        'oil shell rimula r3mv 15w-40 (drum @ 209 ltr)': 'OIL SHELL RIMULA R3MV',
+        'oli rimula r4 x 15w-40 (ibc @ 1000 liter)': 'OLI RIMULA R4 (IBC)',
+        'push rod 3017961 cummins': 'PUSH ROD 3017961',
+        'valve push rod 3057139 cummins': 'VALVE PUSH ROD 3057139',
+        'mpu 4914162 cummins': 'MPU 4914162',
+        'relay my2 24 vdc omron': 'RELAY MY2',
+        'relay my4 24 vdc omron': 'RELAY MY4',
+        'kepala accu timah (+)(-)': 'KEPALA ACCU TIMAH',
+        'socket relay my2': 'SOCKET RELAY MY2',
+        'element air filter aho1135': 'ELEMENT AIR FILTER AHO1135',
+        'ct dropkit 1250 kva cummins': 'CT DROPKIT',
+        'module deepsea 8610': 'MODUL 8610 DEEPSEA',
+        'modul 8610 deepsea': 'MODUL 8610 DEEPSEA',
     }
+    
     df_pakai['Nama Material'] = df_pakai['Nama Material'].str.strip().str.lower()
     df_pakai['Nama Material'] = df_pakai['Nama Material'].apply(lambda x: nama_map.get(x, x.upper()))
+    
+    # Setelah normalisasi, gabungkan data yang sama
+    df_pakai = df_pakai.groupby(['Tanggal','Nama Material','Gudang','Keterangan','Transaksi','JobType'], as_index=False).agg({
+        'Masuk': 'sum',
+        'Keluar': 'sum',
+        'Stok': 'sum',
+        'HARGA_D365': 'max',
+        'TOTAL_COST': 'sum'
+    })
 
+        # ==== DEBUG: Setelah Normalisasi ====
+    with st.expander("🔍 DEBUG: Setelah Normalisasi", expanded=True):
+        pivot_all = df_pakai.groupby('Nama Material').agg(
+            Total_Keluar=('Keluar','sum'),
+            Total_Cost=('TOTAL_COST','sum')
+        ).sort_values('Total_Cost', ascending=False)
+        
+        st.write(f"**Grand Total Cost:** Rp {pivot_all['Total_Cost'].sum():,.0f}")
+        st.write(f"**Jumlah material unik:** {len(pivot_all)}")
+        st.dataframe(pivot_all.head(20), use_container_width=True)
+        
     # Numerik
     for col in ['Masuk','Keluar','Stok','TOTAL_COST']:
         if col in df_pakai.columns:
