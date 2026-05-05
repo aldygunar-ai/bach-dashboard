@@ -241,7 +241,10 @@ def load_all():
                 df_p['Tanggal'] = pd.to_datetime(df_p['Tanggal'], errors='coerce')
             res['pemakaian'] = df_p
     except: pass
-
+        
+    # DEBUG: Tampilkan jumlah data yang terbaca
+    st.write(f"DEBUG load_all: pemakaian rows = {len(res['pemakaian'])}, stock rows = {len(res['stock'])}, cik rows = {len(res.get('cik', pd.DataFrame()))}")
+    
     return res
 
 # ======================== HOME ========================
