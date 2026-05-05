@@ -360,13 +360,21 @@ def page_analisis():
     
     # ==== COST DARI MASTER DATA 1 ====
     if m1 is not None and 'keb_aktual' in m1.columns and 'Harga D365' in m1.columns:
-        # Rename kolom untuk kemudahan
-        m1_cost = m1.rename(columns={
-            'Nama Material': 'nama_material',
-            'Harga D365': 'harga'
-        })
+        m1_cost = m1.rename(columns={'Nama Material': 'nama_material', 'Harga D365': 'harga'})
         
-        # Hitung cost per material: Kebutuhan Aktual × Harga D365
+        # Normalisasi nama
+        nama_map = {
+            'Oli Shell (Drum)': 'Oli Shell',
+            'Oli Shell (IBC)': 'Oli Shell',
+            'Air Filter Element': 'Air Filter Element',
+            'Air Filter Element (Aksa)': 'Air Filter Element (Aksa)',
+            'V-BELT Fan Radiator': 'V-BELT Fan Radiator',
+            'V-BELT (Aksa)': 'V-BELT (Aksa)',
+            'V-BELT Alternator': 'V-BELT Alternator',
+        }
+        m1_cost['nama_material'] = m1_cost['nama_material'].map(nama_map).fillna(m1_cost['nama_material'])
+        
+        # Hitung cost per material
         cost_m1 = m1_cost.groupby('nama_material').agg(
             Total_Keb_Aktual=('keb_aktual', 'sum'),
             Harga_Satuan=('harga', 'max'),
@@ -376,7 +384,6 @@ def page_analisis():
         cost_m1 = cost_m1[cost_m1['Total_Cost'] > 0]
         
         # KPI
-        st.subheader("📈 Ringkasan Pemakaian (dari Master Data 1)")
         grand_total = cost_m1['Total_Cost'].sum()
         k1,k2,k3,k4 = st.columns(4)
         k1.metric("Total Material", len(cost_m1))
@@ -389,8 +396,8 @@ def page_analisis():
         st.subheader("💰 TOP 10 Cost Material (Master Data 1)")
         top_cost = cost_m1.nlargest(10, 'Total_Cost').sort_values('Total_Cost', ascending=True)
         
-        fig = go.Figure()
-        fig.add_trace(go.Bar(
+        fig3 = go.Figure()
+        fig3.add_trace(go.Bar(
             y=top_cost['nama_material'],
             x=top_cost['Total_Cost'],
             orientation='h',
@@ -398,23 +405,21 @@ def page_analisis():
             text=top_cost['Total_Cost'].apply(lambda x: f'Rp {x:,.0f}'),
             textposition='outside'
         ))
-        fig.update_layout(height=400, margin=dict(l=300, r=100, t=30, b=20))
-        st.plotly_chart(fig, use_container_width=True)
+        fig3.update_layout(height=380, margin=dict(l=250, r=100, t=30, b=20))
+        st.plotly_chart(fig3, use_container_width=True)
         
-        # Detail tabel
         with st.expander("📋 Lihat Detail Semua Material"):
             detail = cost_m1.sort_values('Total_Cost', ascending=False)
             detail.columns = ['Nama Material', 'Total Kebutuhan Aktual', 'Harga Satuan', 'Jumlah PLTD', 'Total Cost']
             st.dataframe(detail, use_container_width=True, hide_index=True)
     else:
-        st.warning("Data Master 1 tidak tersedia atau kolom tidak lengkap.")
+        st.warning("Data Master 1 tidak tersedia.")
     
     # ==== TREN DARI SHEET GABUNGAN ====
     if not df_pakai.empty:
         st.markdown("---")
         st.subheader("📈 Tren Pemakaian Material (Sheet Gabungan)")
         
-        # Numerik
         for col in ['Masuk','Keluar']:
             if col in df_pakai.columns:
                 df_pakai[col] = pd.to_numeric(df_pakai[col], errors='coerce').fillna(0)
@@ -438,9 +443,8 @@ def page_analisis():
                                   legend=dict(orientation='h', yanchor='bottom', y=-0.25, xanchor='center', x=0.5),
                                   xaxis=dict(tickangle=-45))
                 st.plotly_chart(fig1, use_container_width=True)
-    
-    # ==== TOP 10 INBOUND VS OUTBOUND ====
-    if not df_pakai.empty:
+        
+        # TOP 10 INBOUND VS OUTBOUND
         st.markdown("---")
         st.subheader("📥📤 TOP 10 Material: Inbound vs Outbound")
         top_10 = df_pakai.groupby('Nama Material').agg(Masuk=('Masuk','sum'), Keluar=('Keluar','sum')).sum(axis=1).nlargest(10).index.tolist()
