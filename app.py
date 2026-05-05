@@ -353,46 +353,107 @@ def page_stock():
 
 # ======================== ANALISIS ========================
 def page_analisis():
-    st.title("📊 Analisis Pemakaian Material - DEBUG M1")
+    st.title("📊 Analisis Pemakaian Material")
     data = load_all()
+    df_pakai = data.get('pemakaian', pd.DataFrame()).copy()
     m1 = data.get('m1')
     
-    # ==== DEBUG: LIHAT ISI MASTER 1 ====
-    with st.expander("🔍 DEBUG: Master Data 1", expanded=True):
-        if m1 is None:
-            st.error("❌ m1 adalah None — Master data 1 tidak terbaca sama sekali!")
-            st.write("Periksa:")
-            st.write("- Apakah sheet 'Master data 1' ada di spreadsheet?")
-            st.write("- Apakah nama sheet persis? (termasuk spasi)")
-        else:
-            st.success(f"✅ m1 terbaca: {len(m1)} baris")
-            st.write("**Kolom yang tersedia:**", m1.columns.tolist())
-            st.write("**Sample data (5 baris):**")
-            st.dataframe(m1.head(), use_container_width=True)
+    # ==== COST DARI MASTER DATA 1 ====
+    if m1 is not None and 'keb_aktual' in m1.columns and 'Harga D365' in m1.columns:
+        # Rename kolom untuk kemudahan
+        m1_cost = m1.rename(columns={
+            'Nama Material': 'nama_material',
+            'Harga D365': 'harga'
+        })
+        
+        # Hitung cost per material: Kebutuhan Aktual × Harga D365
+        cost_m1 = m1_cost.groupby('nama_material').agg(
+            Total_Keb_Aktual=('keb_aktual', 'sum'),
+            Harga_Satuan=('harga', 'max'),
+            Jumlah_PLTD=('pltd', 'nunique')
+        ).reset_index()
+        cost_m1['Total_Cost'] = cost_m1['Total_Keb_Aktual'] * cost_m1['Harga_Satuan']
+        cost_m1 = cost_m1[cost_m1['Total_Cost'] > 0]
+        
+        # KPI
+        st.subheader("📈 Ringkasan Pemakaian (dari Master Data 1)")
+        grand_total = cost_m1['Total_Cost'].sum()
+        k1,k2,k3,k4 = st.columns(4)
+        k1.metric("Total Material", len(cost_m1))
+        k2.metric("Total Kebutuhan Aktual", f"{cost_m1['Total_Keb_Aktual'].sum():,.0f}")
+        k3.metric("Rata² Harga Satuan", f"Rp {cost_m1['Harga_Satuan'].mean():,.0f}")
+        k4.metric("💰 Grand Total Cost", f"Rp {grand_total:,.0f}")
+        st.markdown("---")
+        
+        # TOP 10 COST
+        st.subheader("💰 TOP 10 Cost Material (Master Data 1)")
+        top_cost = cost_m1.nlargest(10, 'Total_Cost').sort_values('Total_Cost', ascending=True)
+        
+        fig = go.Figure()
+        fig.add_trace(go.Bar(
+            y=top_cost['nama_material'],
+            x=top_cost['Total_Cost'],
+            orientation='h',
+            marker=dict(color='#27AE60'),
+            text=top_cost['Total_Cost'].apply(lambda x: f'Rp {x:,.0f}'),
+            textposition='outside'
+        ))
+        fig.update_layout(height=400, margin=dict(l=300, r=100, t=30, b=20))
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Detail tabel
+        with st.expander("📋 Lihat Detail Semua Material"):
+            detail = cost_m1.sort_values('Total_Cost', ascending=False)
+            detail.columns = ['Nama Material', 'Total Kebutuhan Aktual', 'Harga Satuan', 'Jumlah PLTD', 'Total Cost']
+            st.dataframe(detail, use_container_width=True, hide_index=True)
+    else:
+        st.warning("Data Master 1 tidak tersedia atau kolom tidak lengkap.")
+    
+    # ==== TREN DARI SHEET GABUNGAN ====
+    if not df_pakai.empty:
+        st.markdown("---")
+        st.subheader("📈 Tren Pemakaian Material (Sheet Gabungan)")
+        
+        # Numerik
+        for col in ['Masuk','Keluar']:
+            if col in df_pakai.columns:
+                df_pakai[col] = pd.to_numeric(df_pakai[col], errors='coerce').fillna(0)
+        
+        if 'Tanggal' in df_pakai.columns:
+            df_pakai['Tanggal'] = pd.to_datetime(df_pakai['Tanggal'], errors='coerce')
+            df_pakai = df_pakai.dropna(subset=['Tanggal'])
+            df_pakai['BulanStr'] = df_pakai['Tanggal'].dt.strftime('%Y-%m')
             
-            # Cek kolom yang dibutuhkan
-            for col in ['pltd', 'kode_material', 'nama_material', 'keb_aktual', 'harga']:
-                if col in m1.columns:
-                    st.success(f"✅ Kolom '{col}' ADA")
-                    st.write(f"   Sample: {m1[col].head(3).tolist()}")
-                else:
-                    st.error(f"❌ Kolom '{col}' TIDAK ADA")
+            trend = df_pakai.groupby('BulanStr').agg(Masuk=('Masuk','sum'), Keluar=('Keluar','sum')).reset_index().sort_values('BulanStr')
+            
+            if not trend.empty:
+                fig1 = go.Figure()
+                fig1.add_trace(go.Scatter(x=trend['BulanStr'], y=trend['Masuk'], mode='lines+markers+text',
+                                          name='Inbound', line=dict(color='#4B8BBE',width=2), marker=dict(size=8),
+                                          text=trend['Masuk'].apply(lambda x: f'{x:,.0f}'), textposition='top center'))
+                fig1.add_trace(go.Scatter(x=trend['BulanStr'], y=trend['Keluar'], mode='lines+markers+text',
+                                          name='Outbound', line=dict(color='#E67E22',width=2), marker=dict(size=8),
+                                          text=trend['Keluar'].apply(lambda x: f'{x:,.0f}'), textposition='top center'))
+                fig1.update_layout(height=400, xaxis_title='Periode', yaxis_title='Quantity',
+                                  legend=dict(orientation='h', yanchor='bottom', y=-0.25, xanchor='center', x=0.5),
+                                  xaxis=dict(tickangle=-45))
+                st.plotly_chart(fig1, use_container_width=True)
     
-    # ==== DEBUG: LIHAT ISI STOCK ====
-    with st.expander("🔍 DEBUG: Data Stock", expanded=False):
-        df_stock = data.get('stock', pd.DataFrame())
-        if not df_stock.empty:
-            st.write(f"**Stock rows:** {len(df_stock)}")
-            st.write("**Kolom:**", df_stock.columns.tolist())
-            st.dataframe(df_stock.head(), use_container_width=True)
-    
-    # ==== DEBUG: LIHAT ISI PEMAKAIAN ====
-    with st.expander("🔍 DEBUG: Data Pemakaian", expanded=False):
-        df_pakai = data.get('pemakaian', pd.DataFrame())
-        if not df_pakai.empty:
-            st.write(f"**Pemakaian rows:** {len(df_pakai)}")
-            st.write("**Kolom:**", df_pakai.columns.tolist())
-            st.write("**Nama material unik:**", sorted(df_pakai['Nama Material'].unique()))
+    # ==== TOP 10 INBOUND VS OUTBOUND ====
+    if not df_pakai.empty:
+        st.markdown("---")
+        st.subheader("📥📤 TOP 10 Material: Inbound vs Outbound")
+        top_10 = df_pakai.groupby('Nama Material').agg(Masuk=('Masuk','sum'), Keluar=('Keluar','sum')).sum(axis=1).nlargest(10).index.tolist()
+        agg = df_pakai[df_pakai['Nama Material'].isin(top_10)].groupby('Nama Material').agg(Masuk=('Masuk','sum'), Keluar=('Keluar','sum')).reset_index().sort_values('Masuk', ascending=True)
+        if not agg.empty:
+            fig2 = go.Figure()
+            fig2.add_trace(go.Bar(y=agg['Nama Material'], x=agg['Masuk'], name='Inbound', orientation='h', marker=dict(color='#4B8BBE'),
+                                  text=agg['Masuk'].apply(lambda x: f'{x:,.0f}'), textposition='outside'))
+            fig2.add_trace(go.Bar(y=agg['Nama Material'], x=agg['Keluar'], name='Outbound', orientation='h', marker=dict(color='#E67E22'),
+                                  text=agg['Keluar'].apply(lambda x: f'{x:,.0f}'), textposition='outside'))
+            fig2.update_layout(barmode='group', height=400, margin=dict(l=200, r=80, t=30, b=60),
+                              legend=dict(orientation='h', yanchor='bottom', y=-0.25, xanchor='center', x=0.5))
+            st.plotly_chart(fig2, use_container_width=True)
 
 def page_pemakaian(): st.title("🔥 Pemakaian Material"); st.info("Segera hadir.")
 def page_transaksi(): st.title("📊 Transaksi Project"); st.info("Segera hadir.")
