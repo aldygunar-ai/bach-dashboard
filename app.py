@@ -410,16 +410,15 @@ def page_analisis():
         'TOTAL_COST': 'sum'
     })
 
-    # ==== DEBUG: DATA ASLI ====
-    with st.expander("🔍 DEBUG: Data Asli (TOP 30 by Cost)", expanded=True):
+      # ==== DEBUG: SEMUA MATERIAL ====
+    with st.expander("🔍 DEBUG: Semua Material (termasuk yang cost=0)", expanded=True):
         pivot_all = df_pakai.groupby('Nama Material').agg(
             Total_Keluar=('Keluar','sum'),
+            Avg_Harga=('HARGA_D365','mean'),
             Total_Cost=('TOTAL_COST','sum')
         ).sort_values('Total_Cost', ascending=False)
-        
-        st.write(f"**Grand Total Cost:** Rp {pivot_all['Total_Cost'].sum():,.0f}")
         st.write(f"**Jumlah material unik:** {len(pivot_all)}")
-        st.dataframe(pivot_all.head(30), use_container_width=True)
+        st.dataframe(pivot_all, use_container_width=True)
         
     # Numerik
     for col in ['Masuk','Keluar','Stok','TOTAL_COST']:
