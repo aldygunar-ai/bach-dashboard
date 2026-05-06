@@ -354,8 +354,91 @@ def page_stock():
 # ======================== ANALISIS ========================
 def page_analisis():
     st.title("📊 Analisis Pemakaian Material")
-    data = load_all()
-    df_pakai = data.get('pemakaian', pd.DataFrame()).copy()
+       # PEMAKAIAN (SHEET GABUNGAN) - BACA SEMUA BARIS
+    try:
+        sh = cl.open_by_key(MASTER_GABUNGAN_ID)
+        ws = sh.worksheet('Gabungan')
+        data = ws.get_all_values()
+        
+        # DEBUG: lihat jumlah baris
+        st.write(f"DEBUG: Sheet Gabungan total baris: {len(data)}")
+        
+        if len(data) >= 2:
+            # Cari header (baris yang mengandung "Tanggal" dan "Nama")
+            header_row = None
+            for i, row in enumerate(data[:15]):  # cek 15 baris pertama
+                row_text = ' '.join([str(c).lower() for c in row if str(c).strip()])
+                if 'tanggal' in row_text and ('nama' in row_text or 'material' in row_text):
+                    header_row = i
+                    break
+            
+            if header_row is None:
+                header_row = 2  # fallback
+            
+            st.write(f"DEBUG: Header row = {header_row}")
+            
+            p_rows = []
+            skipped = 0
+            for r_idx, r in enumerate(data[header_row+1:]):
+                if not r or len(r) < 2:
+                    skipped += 1
+                    continue
+                
+                # Skip jika 5 kolom pertama kosong semua
+                first_five = [str(c).strip() for c in r[:5] if c]
+                if not first_five:
+                    skipped += 1
+                    continue
+                
+                tanggal = r[0].strip() if len(r) > 0 else ''
+                masuk = r[1].strip() if len(r) > 1 else '0'
+                keluar = r[2].strip() if len(r) > 2 else '0'
+                stok = r[3].strip() if len(r) > 3 else '0'
+                keterangan = r[4].strip() if len(r) > 4 else ''
+                transaksi = r[7].strip() if len(r) > 7 else ''
+                nama_material = r[8].strip() if len(r) > 8 else ''
+                jobtype = r[9].strip() if len(r) > 9 else ''
+                gudang = r[11].strip() if len(r) > 11 else ''
+                harga_raw = r[14].strip() if len(r) > 14 else '0'
+                
+                if nama_material:
+                    try: m = float(masuk.replace(',','')) if masuk else 0.0
+                    except: m = 0.0
+                    try: k = float(keluar.replace(',','')) if keluar else 0.0
+                    except: k = 0.0
+                    try: s = float(stok.replace(',','')) if stok else 0.0
+                    except: s = 0.0
+                    
+                    # Harga: hapus titik pemisah ribuan
+                    try:
+                        if '.' in harga_raw and ',' not in harga_raw:
+                            h = float(harga_raw.replace('.', ''))
+                        elif ',' in harga_raw:
+                            h = float(harga_raw.replace(',', '.'))
+                        else:
+                            h = float(harga_raw)
+                    except:
+                        h = 0.0
+                    
+                    p_rows.append({
+                        'Tanggal': tanggal,
+                        'Nama Material': nama_material,
+                        'Masuk': m, 'Keluar': k, 'Stok': s,
+                        'Gudang': gudang, 'Keterangan': keterangan,
+                        'Transaksi': transaksi, 'JobType': jobtype,
+                        'HARGA_D365': h,
+                        'TOTAL_COST': k * h,
+                    })
+            
+            st.write(f"DEBUG: Baris diproses = {len(p_rows)}, Baris diskip = {skipped}")
+            
+            df_p = pd.DataFrame(p_rows)
+            if not df_p.empty:
+                df_p['Tanggal'] = pd.to_datetime(df_p['Tanggal'], errors='coerce')
+            res['pemakaian'] = df_p
+    except Exception as e:
+        st.write(f"DEBUG: Error baca Gabungan = {e}")
+        
     
     if df_pakai.empty:
         st.warning("Data pemakaian (sheet Gabungan) belum tersedia.")
