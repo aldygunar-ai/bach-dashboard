@@ -351,9 +351,10 @@ def page_stock():
             sp = sp[mask.any(axis=1)]
         cfg_s = {'Kode Material': st.column_config.TextColumn(pinned=True), 'Nama Material': st.column_config.TextColumn(pinned=True)}
         for col in pltd_cols_s: cfg_s[col] = st.column_config.NumberColumn(format="%.1f")
-        def hl(val):
-            if isinstance(val, (int,float)) and 0 < val <= 1.5: return 'background-color: #ffcccc; color: #cc0000; font-weight: bold;'
-            return ''
+            def hl(val):
+        if isinstance(val, (int, float)) and val <= 1.5:
+            return 'background-color: #ffcccc; color: #cc0000; font-weight: bold;'
+        return ''
         styled_sp = sp.style.map(hl, subset=pltd_cols_s)
         st.dataframe(styled_sp, column_config=cfg_s, use_container_width=True, hide_index=True)
     else:
@@ -662,16 +663,25 @@ def page_propose():
     st.dataframe(cf_pivot, column_config=cfg_cf, use_container_width=True, hide_index=True)
     st.markdown("---")
     
-    # 4. Detail Propose Order
+    # ============================================================
+    # 4. DETAIL PROPOSE ORDER (TABEL RAPI)
+    # ============================================================
     st.subheader("📋 Detail Propose Order per Material")
     
     cols_show = ['PLTD', 'Kode Material', 'Nama Material', 'Qty', 'Keb_Aktual', 'Sisa_Bulan', 'Keb_3_Bulan', 'Propose_3_Bulan', 'Status']
     cols_show = [c for c in cols_show if c in prev.columns]
     
-    st.dataframe(prev[cols_show].sort_values('Status'), use_container_width=True, hide_index=True, height=400)
+    # Urutkan: Urgent dulu, lalu Warning, lalu Perlu Order
+    status_order = {'🔴 Urgent': 0, '🟠 Warning': 1, '🟡 Perlu Order': 2, '🟢 Aman': 3}
+    prev['Status_Sort'] = prev['Status'].map(status_order)
+    prev = prev.sort_values(['Status_Sort', 'PLTD'])
+    
+    st.dataframe(prev[cols_show], use_container_width=True, hide_index=True, height=400)
     st.markdown("---")
     
-    # 5. Rekomendasi Order (Simple)
+    # ============================================================
+    # 5. REKOMENDASI ORDER (TABEL RINGKAS)
+    # ============================================================
     st.subheader("📝 Rekomendasi Order")
     
     urgent_df = prev[prev['Status'] == '🔴 Urgent']
@@ -680,16 +690,20 @@ def page_propose():
     if not urgent_df.empty:
         total_urgent = urgent_df['Propose_3_Bulan'].sum()
         st.error(f"🔴 **URGENT:** {len(urgent_df)} material perlu segera order! Total: **{total_urgent:,.0f} unit**")
-        with st.expander("Lihat detail urgent"):
-            for _, row in urgent_df.iterrows():
-                st.write(f"- {row['Nama Material']} @ {row['PLTD']}: order **{row['Propose_3_Bulan']:,.0f} unit**")
+        
+        # Tabel rekomendasi urgent
+        rek_urgent = urgent_df[['PLTD', 'Nama Material', 'Qty', 'Keb_Aktual', 'Propose_3_Bulan']].copy()
+        rek_urgent.columns = ['PLTD', 'Material', 'Stok', 'Keb/Bulan', 'Usulan Order']
+        st.dataframe(rek_urgent, use_container_width=True, hide_index=True)
     
     if not warning_df.empty:
         total_warning = warning_df['Propose_3_Bulan'].sum()
         st.warning(f"🟠 **WARNING:** {len(warning_df)} material perlu order. Total: **{total_warning:,.0f} unit**")
-        with st.expander("Lihat detail warning"):
-            for _, row in warning_df.iterrows():
-                st.write(f"- {row['Nama Material']} @ {row['PLTD']}: order **{row['Propose_3_Bulan']:,.0f} unit**")
+        
+        # Tabel rekomendasi warning
+        rek_warning = warning_df[['PLTD', 'Nama Material', 'Qty', 'Keb_Aktual', 'Propose_3_Bulan']].copy()
+        rek_warning.columns = ['PLTD', 'Material', 'Stok', 'Keb/Bulan', 'Usulan Order']
+        st.dataframe(rek_warning, use_container_width=True, hide_index=True)
     
     total_all = urgent_df['Propose_3_Bulan'].sum() + warning_df['Propose_3_Bulan'].sum()
     st.info(f"📦 **Total usulan order (urgent + warning): {total_all:,.0f} unit**")
