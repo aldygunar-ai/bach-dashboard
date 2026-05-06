@@ -556,6 +556,21 @@ def page_propose():
         return ''
     st.dataframe(sp.style.map(hl, subset=pltd_cols_s), column_config=cfg_s, use_container_width=True, hide_index=True)
     st.markdown("---")
+
+        with st.expander("🔍 Debug PLTD Hilang", expanded=True):
+        st.write("**PLTD di Stok:**", sorted(df_stock['PLTD'].unique()))
+        st.write("**PLTD di M1:**", sorted(m1_use['PLTD'].unique()))
+        st.write("**PLTD setelah merge:**", sorted(propose['PLTD'].unique()))
+        st.write("**PLTD dengan Keb_Aktual > 0:**", sorted(prev['PLTD'].unique()))
+        
+        # Cek PLTD yang hilang
+        hilang = ['WAENA', 'AIR ANYIR', 'PADANG MANGGAR', 'MERAWANG', 'KRUENG RAYA']
+        for p in hilang:
+            di_stok = p in df_stock['PLTD'].values
+            di_m1 = p in m1_use['PLTD'].values
+            di_propose = p in propose['PLTD'].values
+            di_prev = p in prev['PLTD'].values
+            st.write(f"- **{p}**: Stok={di_stok}, M1={di_m1}, Propose={di_propose}, Prev={di_prev}")
     
     # 2. Kebutuhan PM
     st.subheader("📋 Kebutuhan Per Bulan Sesuai PM")
