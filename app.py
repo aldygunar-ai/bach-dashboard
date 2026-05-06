@@ -534,6 +534,8 @@ def page_propose():
     data = load_all()
     df_stock = data.get('stock', pd.DataFrame()).copy()
     m1 = data.get('m1')
+    m2 = data.get('m2')
+    cik = data.get('cik', pd.DataFrame())
     
     if df_stock.empty or m1 is None:
         st.warning("Data stok atau Master Data 1 tidak tersedia.")
@@ -546,10 +548,11 @@ def page_propose():
         'Nama Material': 'Nama Material',
         'kode_material': 'Kode Material',
         'pltd': 'PLTD',
+        'Kebutuhan Perbulan Sesuai CF PM': 'Keb_PM',
         'keb_aktual': 'Keb_Aktual'
     })
     
-    cols_need = ['PLTD', 'Kode Material', 'Keb_Aktual']
+    cols_need = ['PLTD', 'Kode Material', 'Keb_PM', 'Keb_Aktual']
     m1_use = m1_use[[c for c in cols_need if c in m1_use.columns]]
     
     m1_use['PLTD'] = m1_use['PLTD'].astype(str).str.strip().str.upper()
@@ -559,26 +562,23 @@ def page_propose():
     
     propose = df_stock.merge(m1_use, on=['PLTD', 'Kode Material'], how='left')
     
-    for col in ['Qty', 'Keb_Aktual']:
+    for col in ['Qty', 'Keb_PM', 'Keb_Aktual']:
         if col in propose.columns:
             propose[col] = pd.to_numeric(propose[col], errors='coerce').fillna(0)
+    
+    # Filter hanya Preventive
+    propose = propose[propose['Jenis'] == 'Preventive']
     
     # ============================================================
     # HITUNG
     # ============================================================
-    propose['Keb_3_Bulan'] = propose['Keb_Aktual'] * 3
     propose['Sisa_Bulan'] = np.where(
         propose['Keb_Aktual'] > 0,
         np.floor(propose['Qty'] / propose['Keb_Aktual'] * 10) / 10,
         0
     )
-    propose['Sisa_Hari'] = np.where(
-        propose['Keb_Aktual'] > 0,
-        np.floor(propose['Qty'] / propose['Keb_Aktual'] * 30.5),
-        0
-    )
-    propose['Propose_3_Bulan'] = np.maximum(0, propose['Keb_3_Bulan'] - propose['Qty'])
-    propose['Propose_3_Bulan'] = np.ceil(propose['Propose_3_Bulan'])
+    propose['Keb_3_Bulan'] = propose['Keb_Aktual'] * 3
+    propose['Propose_3_Bulan'] = np.ceil(np.maximum(0, propose['Keb_3_Bulan'] - propose['Qty']))
     
     def get_status(row):
         if row['Keb_Aktual'] <= 0:
@@ -594,100 +594,127 @@ def page_propose():
     
     propose['Status'] = propose.apply(get_status, axis=1)
     
-    # Hanya yang ada kebutuhan
-    propose = propose[propose['Keb_Aktual'] > 0]
-    
     # ============================================================
-    # FILTER (DEFAULT KOSONG)
+    # 1. SISA STOK PREVENTIVE DALAM BULAN (DARI PAGE_STOCK)
     # ============================================================
-    st.sidebar.header("🎯 Filter Propose")
+    st.subheader("⏳ Sisa Stok Preventive dalam Bulan")
     
-    pltd_opts = sorted(propose['PLTD'].unique())
-    sel_pltd = st.sidebar.multiselect("📍 PLTD", pltd_opts, default=[])
+    prev = propose[propose['Keb_Aktual'] > 0].copy()
     
-    status_opts = ['🔴 Urgent', '🟠 Warning', '🟡 Perlu Order', '🟢 Aman', '⚪ No Data']
-    sel_status = st.sidebar.multiselect("📊 Status", status_opts, default=[])
+    sp = prev.pivot_table(
+        index=['Kode Material', 'Nama Material'],
+        columns='PLTD',
+        values='Sisa_Bulan',
+        aggfunc='first',
+        fill_value=0.0
+    )
+    sp = sp.reset_index()
+    pltd_cols_s = [c for c in sp.columns if c not in ('Kode Material', 'Nama Material')]
+    sp = sp[['Kode Material', 'Nama Material'] + pltd_cols_s]
     
-    if 'Jenis' in propose.columns:
-        jenis_opts = ['Preventive', 'Corrective']
-        sel_jenis = st.sidebar.multiselect("⚙️ Jenis Material", jenis_opts, default=[])
-    else:
-        sel_jenis = []
+    cfg_s = {
+        'Kode Material': st.column_config.TextColumn(pinned=True),
+        'Nama Material': st.column_config.TextColumn(pinned=True),
+    }
+    for col in pltd_cols_s:
+        cfg_s[col] = st.column_config.NumberColumn(format="%.1f")
     
-    f = propose.copy()
-    if sel_pltd: f = f[f['PLTD'].isin(sel_pltd)]
-    if sel_status: f = f[f['Status'].isin(sel_status)]
-    if sel_jenis: f = f[f['Jenis'].isin(sel_jenis)]
+    def hl(val):
+        if isinstance(val, (int, float)) and 0 < val <= 1.5:
+            return 'background-color: #ffcccc; color: #cc0000; font-weight: bold;'
+        return ''
     
-    # ============================================================
-    # KPI
-    # ============================================================
-    st.subheader("📈 Ringkasan Propose Order")
-    
-    urgent = len(f[f['Status'] == '🔴 Urgent'])
-    warning = len(f[f['Status'] == '🟠 Warning'])
-    perlu = len(f[f['Status'] == '🟡 Perlu Order'])
-    total_propose = f['Propose_3_Bulan'].sum()
-    
-    k1,k2,k3,k4 = st.columns(4)
-    k1.metric("🔴 Urgent", urgent)
-    k2.metric("🟠 Warning", warning)
-    k3.metric("🟡 Perlu Order", perlu)
-    k4.metric("📦 Total Usulan Order", f"{total_propose:,.0f} unit")
+    styled_sp = sp.style.map(hl, subset=pltd_cols_s)
+    st.dataframe(styled_sp, column_config=cfg_s, use_container_width=True, hide_index=True)
     
     st.markdown("---")
     
     # ============================================================
-    # TABEL PROPOSE
+    # 2. KEBUTUHAN PER BULAN SESUAI PM
+    # ============================================================
+    st.subheader("📋 Kebutuhan Per Bulan Sesuai PM")
+    
+    pm_pivot = prev.pivot_table(
+        index=['Kode Material', 'Nama Material'],
+        columns='PLTD',
+        values='Keb_PM',
+        aggfunc='first',
+        fill_value=0
+    )
+    pm_pivot = pm_pivot.round(0).astype(int)
+    pm_pivot = pm_pivot.reset_index()
+    pm_pivot = pm_pivot[['Kode Material', 'Nama Material'] + pltd_cols_s]
+    
+    cfg_pm = {
+        'Kode Material': st.column_config.TextColumn(pinned=True),
+        'Nama Material': st.column_config.TextColumn(pinned=True),
+    }
+    st.dataframe(pm_pivot, column_config=cfg_pm, use_container_width=True, hide_index=True)
+    
+    st.markdown("---")
+    
+    # ============================================================
+    # 3. KEBUTUHAN PER BULAN SESUAI CF AKTUAL
+    # ============================================================
+    st.subheader("📋 Kebutuhan Per Bulan Sesuai CF Aktual")
+    
+    cf_pivot = prev.pivot_table(
+        index=['Kode Material', 'Nama Material'],
+        columns='PLTD',
+        values='Keb_Aktual',
+        aggfunc='first',
+        fill_value=0
+    )
+    cf_pivot = cf_pivot.round(0).astype(int)
+    cf_pivot = cf_pivot.reset_index()
+    cf_pivot = cf_pivot[['Kode Material', 'Nama Material'] + pltd_cols_s]
+    
+    cfg_cf = {
+        'Kode Material': st.column_config.TextColumn(pinned=True),
+        'Nama Material': st.column_config.TextColumn(pinned=True),
+    }
+    st.dataframe(cf_pivot, column_config=cfg_cf, use_container_width=True, hide_index=True)
+    
+    st.markdown("---")
+    
+    # ============================================================
+    # 4. DETAIL PROPOSE ORDER
     # ============================================================
     st.subheader("📋 Detail Propose Order per Material")
     
-    cols_show = ['PLTD', 'Kode Material', 'Nama Material', 'Qty', 'Keb_Aktual', 'Sisa_Bulan', 'Sisa_Hari', 'Keb_3_Bulan', 'Propose_3_Bulan', 'Status']
-    if 'Jenis' in f.columns:
-        cols_show.insert(3, 'Jenis')
+    cols_show = ['PLTD', 'Kode Material', 'Nama Material', 'Qty', 'Keb_Aktual', 'Sisa_Bulan', 'Keb_3_Bulan', 'Propose_3_Bulan', 'Status']
     cols_show = [c for c in cols_show if c in f.columns]
     
-    f_display = f[cols_show].sort_values(['Status', 'PLTD'])
-    st.dataframe(f_display, use_container_width=True, hide_index=True, height=500)
+    f_display = prev[prev['Keb_Aktual'] > 0][cols_show].sort_values('Status')
+    st.dataframe(f_display, use_container_width=True, hide_index=True, height=400)
     
     st.markdown("---")
     
     # ============================================================
-    # RINGKASAN TEKS
+    # 5. RINGKASAN REKOMENDASI (SIMPLE)
     # ============================================================
-    st.subheader("📝 Ringkasan Rekomendasi Order")
+    st.subheader("📝 Rekomendasi Order")
     
-    urgent_df = f[f['Status'] == '🔴 Urgent']
+    urgent_df = prev[prev['Status'] == '🔴 Urgent']
+    warning_df = prev[prev['Status'] == '🟠 Warning']
+    
     if not urgent_df.empty:
-        st.markdown("### 🔴 Urgent - Harus Segera Order")
-        for _, row in urgent_df.iterrows():
-            st.error(
-                f"**{row['Nama Material']}** di **{row['PLTD']}**: "
-                f"Hanya {row['Qty']:,.0f} unit (cukup {row['Sisa_Hari']:.0f} hari), "
-                f"kurang dari kebutuhan 1 bulan ({row['Keb_Aktual']:,.0f} unit). "
-                f"**Harus segera order {row['Propose_3_Bulan']:,.0f} unit!**"
-            )
+        total_urgent = urgent_df['Propose_3_Bulan'].sum()
+        st.error(f"🔴 **URGENT:** {len(urgent_df)} material perlu segera order! Total usulan: **{total_urgent:,.0f} unit**")
+        with st.expander("Lihat detail urgent"):
+            for _, row in urgent_df.iterrows():
+                st.write(f"- {row['Nama Material']} @ {row['PLTD']}: order **{row['Propose_3_Bulan']:,.0f} unit**")
     
-    warning_df = f[f['Status'] == '🟠 Warning']
     if not warning_df.empty:
-        st.markdown("### 🟠 Warning - Perlu Order Dalam Waktu Dekat")
-        for _, row in warning_df.iterrows():
-            st.warning(
-                f"**{row['Nama Material']}** di **{row['PLTD']}**: "
-                f"Stok {row['Qty']:,.0f} unit (cukup {row['Sisa_Hari']:.0f} hari), "
-                f"belum mencukupi kebutuhan 3 bulan ({row['Keb_3_Bulan']:,.0f} unit). "
-                f"**Perlu order {row['Propose_3_Bulan']:,.0f} unit.**"
-            )
+        total_warning = warning_df['Propose_3_Bulan'].sum()
+        st.warning(f"🟠 **WARNING:** {len(warning_df)} material perlu order. Total usulan: **{total_warning:,.0f} unit**")
+        with st.expander("Lihat detail warning"):
+            for _, row in warning_df.iterrows():
+                st.write(f"- {row['Nama Material']} @ {row['PLTD']}: order **{row['Propose_3_Bulan']:,.0f} unit**")
     
-    perlu_df = f[f['Status'] == '🟡 Perlu Order']
-    if not perlu_df.empty and len(perlu_df) <= 10:
-        st.markdown("### 🟡 Perlu Order - Untuk 3 Bulan Ke Depan")
-        for _, row in perlu_df.iterrows():
-            st.info(
-                f"**{row['Nama Material']}** di **{row['PLTD']}**: "
-                f"Stok {row['Qty']:,.0f} unit (cukup {row['Sisa_Hari']:.0f} hari), "
-                f"belum mencukupi kebutuhan 3 bulan ({row['Keb_3_Bulan']:,.0f} unit). "
-                f"**Perlu order {row['Propose_3_Bulan']:,.0f} unit.**"
+    # Total
+    total_all = urgent_df['Propose_3_Bulan'].sum() + warning_df['Propose_3_Bulan'].sum()
+    st.info(f"📦 **Total usulan order (urgent + warning): {total_all:,.0f} unit**")
             )
             
 def page_transaksi(): st.title("📊 Transaksi Project"); st.info("Segera hadir.")
