@@ -427,7 +427,10 @@ def page_analisis():
     sel_gudang = st.sidebar.multiselect("🏢 Gudang", gudang_opts, default=[])
     jobtype_opts = sorted(df_pakai['JobType'].dropna().unique().astype(str)) if 'JobType' in df_pakai.columns else []
     sel_jobtype = st.sidebar.multiselect("📋 JobType", jobtype_opts, default=[])
-    tahun_opts = sorted([t for t in df_pakai['Tahun'].unique() if t and t != '<NA>']) if 'Tahun' in df_pakai.columns else []
+        if 'Tahun' in df_pakai.columns:
+        tahun_opts = sorted([str(t) for t in df_pakai['Tahun'].unique() if pd.notna(t) and str(t) not in ['', '<NA>', 'None', 'nan']])
+    else:
+        tahun_opts = []
     sel_tahun = st.sidebar.multiselect("📅 Tahun", tahun_opts, default=[])
     periode_opts = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Ags','Sep','Okt','Nov','Des']
     sel_periode = st.sidebar.multiselect("🗓️ Bulan", periode_opts, default=[])
