@@ -354,97 +354,16 @@ def page_stock():
 # ======================== ANALISIS ========================
 def page_analisis():
     st.title("📊 Analisis Pemakaian Material")
-       # PEMAKAIAN (SHEET GABUNGAN) - BACA SEMUA BARIS
-    try:
-        sh = cl.open_by_key(MASTER_GABUNGAN_ID)
-        ws = sh.worksheet('Gabungan')
-        data = ws.get_all_values()
-        
-        # DEBUG: lihat jumlah baris
-        st.write(f"DEBUG: Sheet Gabungan total baris: {len(data)}")
-        
-        if len(data) >= 2:
-            # Cari header (baris yang mengandung "Tanggal" dan "Nama")
-            header_row = None
-            for i, row in enumerate(data[:15]):  # cek 15 baris pertama
-                row_text = ' '.join([str(c).lower() for c in row if str(c).strip()])
-                if 'tanggal' in row_text and ('nama' in row_text or 'material' in row_text):
-                    header_row = i
-                    break
-            
-            if header_row is None:
-                header_row = 2  # fallback
-            
-            st.write(f"DEBUG: Header row = {header_row}")
-            
-            p_rows = []
-            skipped = 0
-            for r_idx, r in enumerate(data[header_row+1:]):
-                if not r or len(r) < 2:
-                    skipped += 1
-                    continue
-                
-                # Skip jika 5 kolom pertama kosong semua
-                first_five = [str(c).strip() for c in r[:5] if c]
-                if not first_five:
-                    skipped += 1
-                    continue
-                
-                tanggal = r[0].strip() if len(r) > 0 else ''
-                masuk = r[1].strip() if len(r) > 1 else '0'
-                keluar = r[2].strip() if len(r) > 2 else '0'
-                stok = r[3].strip() if len(r) > 3 else '0'
-                keterangan = r[4].strip() if len(r) > 4 else ''
-                transaksi = r[7].strip() if len(r) > 7 else ''
-                nama_material = r[8].strip() if len(r) > 8 else ''
-                jobtype = r[9].strip() if len(r) > 9 else ''
-                gudang = r[11].strip() if len(r) > 11 else ''
-                harga_raw = r[14].strip() if len(r) > 14 else '0'
-                
-                if nama_material:
-                    try: m = float(masuk.replace(',','')) if masuk else 0.0
-                    except: m = 0.0
-                    try: k = float(keluar.replace(',','')) if keluar else 0.0
-                    except: k = 0.0
-                    try: s = float(stok.replace(',','')) if stok else 0.0
-                    except: s = 0.0
-                    
-                    # Harga: hapus titik pemisah ribuan
-                    try:
-                        if '.' in harga_raw and ',' not in harga_raw:
-                            h = float(harga_raw.replace('.', ''))
-                        elif ',' in harga_raw:
-                            h = float(harga_raw.replace(',', '.'))
-                        else:
-                            h = float(harga_raw)
-                    except:
-                        h = 0.0
-                    
-                    p_rows.append({
-                        'Tanggal': tanggal,
-                        'Nama Material': nama_material,
-                        'Masuk': m, 'Keluar': k, 'Stok': s,
-                        'Gudang': gudang, 'Keterangan': keterangan,
-                        'Transaksi': transaksi, 'JobType': jobtype,
-                        'HARGA_D365': h,
-                        'TOTAL_COST': k * h,
-                    })
-            
-            st.write(f"DEBUG: Baris diproses = {len(p_rows)}, Baris diskip = {skipped}")
-            
-            df_p = pd.DataFrame(p_rows)
-            if not df_p.empty:
-                df_p['Tanggal'] = pd.to_datetime(df_p['Tanggal'], errors='coerce')
-            res['pemakaian'] = df_p
-    except Exception as e:
-        st.write(f"DEBUG: Error baca Gabungan = {e}")
-        
+    data = load_all()
+    df_pakai = data.get('pemakaian', pd.DataFrame()).copy()
     
     if df_pakai.empty:
         st.warning("Data pemakaian (sheet Gabungan) belum tersedia.")
         return
     
-    # Normalisasi nama
+    # ============================================================
+    # NORMALISASI NAMA MATERIAL
+    # ============================================================
     nama_map = {
         'water coollant reco-cool - drum': 'WATER COOLLANT RECO-COOL',
         'water coollant reco-cool multiroad-drum': 'WATER COOLLANT RECO-COOL',
@@ -463,16 +382,48 @@ def page_analisis():
         'filter separator fs 1006 fleetguard': 'FILTER SEPARATOR FS1006',
         'oil filter lf3325 fleetguard': 'OIL FILTER LF3325',
         'element air filter aho1135': 'ELEMENT AIR FILTER AHO1135',
+        'control governor 306232220': 'CONTROL GOVERNOR',
+        'push rod 3017961 cummins': 'PUSH ROD',
+        'valve push rod 3057139 cummins': 'VALVE PUSH ROD',
+        'v-belt 3015257 cummins': 'V-BELT 3015257',
+        'v-belt 5412990 cummins': 'V-BELT 5412990',
+        'v-belt 5413003 cummins': 'V-BELT 5413003',
+        'injector 3095773 cummins': 'INJECTOR',
+        'actuator etr fuel control 3408326': 'ACTUATOR',
+        'mpu 4914162 cummins': 'MPU',
+        'relay my2 24 vdc omron': 'RELAY MY2',
+        'relay my4 24 vdc omron': 'RELAY MY4',
+        'kepala accu timah (+)(-)': 'KEPALA ACCU TIMAH',
+        'socket relay my2': 'SOCKET RELAY MY2',
+        'ct dropkit 1250 kva cummins': 'CT DROPKIT',
+        'dinamo ampere 3016627': 'DINAMO AMPERE',
+        'dinamo ampere 3631678 cummins': 'DINAMO AMPERE',
+        'switch oil 10mm vdo original': 'SWITCH OIL 10MM VDO',
+        'switch oil 10mm vdo': 'SWITCH OIL 10MM VDO',
+        'fuse 125 a 24 kv/40ka fort': 'FUSE 125A',
+        'solenoid 3096857 cummins': 'SOLENOID',
+        'stc fuel system 3063022 cummins': 'STC FUEL SYSTEM',
+        'molded hose 3631572 cummins': 'MOLDED HOSE',
+        'shock absorber 3008018': 'SHOCK ABSORBER',
+        'temperatur switch sensor 120 derajat celcius': 'TEMPERATUR SWITCH',
+        'avr d350 leroy somer': 'AVR D350',
+        'accu 12v n150 yuasa': 'ACCU 12V N150',
+        'uvr abb sace emax-2 yu-1sda073700r1': 'UVR SACE EMAX-2',
+        'uvr sace emax-2 yo/yc-1sda073674r1': 'UVR SACE EMAX-2',
+        'skun 300 mm': 'SKUN 300MM',
+        'varistor': 'VARISTOR',
+        'elictpart / trip unit control unit acb sace ekip dip li 2000a': 'TRIP UNIT ACB',
     }
     df_pakai['Nama Material'] = df_pakai['Nama Material'].str.strip().str.lower()
     df_pakai['Nama Material'] = df_pakai['Nama Material'].apply(lambda x: nama_map.get(x, x.upper()))
     
-    # Numerik
-    for col in ['Masuk','Keluar','Stok','TOTAL_COST']:
+    # ============================================================
+    # NUMERIK & TANGGAL
+    # ============================================================
+    for col in ['Masuk', 'Keluar', 'Stok', 'TOTAL_COST']:
         if col in df_pakai.columns:
             df_pakai[col] = pd.to_numeric(df_pakai[col], errors='coerce').fillna(0)
     
-    # Tanggal
     if 'Tanggal' in df_pakai.columns:
         df_pakai['Tanggal'] = pd.to_datetime(df_pakai['Tanggal'], errors='coerce')
         df_pakai = df_pakai.dropna(subset=['Tanggal'])
@@ -482,7 +433,9 @@ def page_analisis():
         df_pakai['Periode'] = df_pakai['Tanggal'].dt.month.map(bulan_map)
         df_pakai['BulanStr'] = df_pakai['Tanggal'].dt.strftime('%Y-%m')
     
-    # ==== SIDEBAR FILTER ====
+    # ============================================================
+    # SIDEBAR FILTER
+    # ============================================================
     st.sidebar.header("🎯 Filter Analisis")
     
     nama_opts = sorted(df_pakai['Nama Material'].unique().astype(str))
@@ -500,7 +453,9 @@ def page_analisis():
     periode_opts = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Ags','Sep','Okt','Nov','Des']
     sel_periode = st.sidebar.multiselect("🗓️ Bulan", periode_opts, default=[])
     
-    # Filter data
+    # ============================================================
+    # FILTER DATA
+    # ============================================================
     f = df_pakai.copy()
     if sel_nama: f = f[f['Nama Material'].astype(str).isin(sel_nama)]
     if sel_gudang: f = f[f['Gudang'].astype(str).isin(sel_gudang)]
@@ -508,7 +463,9 @@ def page_analisis():
     if sel_tahun: f = f[f['Tahun'].astype(str).isin(sel_tahun)]
     if sel_periode: f = f[f['Periode'].astype(str).isin(sel_periode)]
     
-    # ==== PIVOT COST ====
+    # ============================================================
+    # PIVOT COST
+    # ============================================================
     pivot_cost = f.pivot_table(
         index='Nama Material',
         values=['Keluar', 'TOTAL_COST'],
@@ -516,35 +473,12 @@ def page_analisis():
     )
     pivot_cost = pivot_cost[pivot_cost['TOTAL_COST'] > 0]
     grand_total_cost = pivot_cost['TOTAL_COST'].sum()
-
-        # ==== DEBUG: CEK TOTAL COST TANPA FILTER ====
-    with st.expander("🔍 DEBUG: Total Cost Check", expanded=True):
-        # Pivot dari df_pakai (SEBELUM filter)
-        pivot_all = df_pakai.pivot_table(
-            index='Nama Material',
-            values=['Keluar', 'TOTAL_COST'],
-            aggfunc={'Keluar': 'sum', 'TOTAL_COST': 'sum'}
-        )
-        total_all = pivot_all['TOTAL_COST'].sum()
-        total_keluar_all = pivot_all['Keluar'].sum()
-        st.write(f"**TANPA FILTER:** Grand Total Cost = Rp {total_all:,.0f}, Total Keluar = {total_keluar_all:,.0f}, Material = {len(pivot_all)}")
-        
-        # Pivot dari f (SETELAH filter)
-        total_f = pivot_cost['TOTAL_COST'].sum()
-        total_keluar_f = pivot_cost['Keluar'].sum()
-        st.write(f"**DENGAN FILTER:** Grand Total Cost = Rp {total_f:,.0f}, Total Keluar = {total_keluar_f:,.0f}, Material = {len(pivot_cost)}")
-        
-        # Cek berapa material yang TOTAL_COST = 0
-        zero_cost = pivot_all[pivot_all['TOTAL_COST'] == 0]
-        st.write(f"**Material dengan TOTAL_COST = 0:** {len(zero_cost)}")
-        if not zero_cost.empty:
-            st.dataframe(zero_cost.head(20), use_container_width=True)
     
     # ============================================================
     # KPI CARDS
     # ============================================================
     st.subheader("📈 Ringkasan Pemakaian")
-    k1,k2,k3,k4 = st.columns(4)
+    k1, k2, k3, k4 = st.columns(4)
     k1.metric("Total Transaksi", len(f))
     k2.metric("Total Keluar", f"{pivot_cost['Keluar'].sum():,.0f}")
     k3.metric("Material Unik", len(pivot_cost))
@@ -553,28 +487,38 @@ def page_analisis():
     st.markdown("---")
     
     # ============================================================
-    # 1. TREN PEMAKAIAN MATERIAL (LINE CHART)
+    # 1. TREN PEMAKAIAN MATERIAL
     # ============================================================
     st.subheader("📈 Tren Pemakaian Material")
     if 'BulanStr' in f.columns:
-        trend = f.groupby('BulanStr').agg(Masuk=('Masuk','sum'), Keluar=('Keluar','sum')).reset_index().sort_values('BulanStr')
+        trend = f.groupby('BulanStr').agg(
+            Masuk=('Masuk', 'sum'),
+            Keluar=('Keluar', 'sum')
+        ).reset_index().sort_values('BulanStr')
+        
         if not trend.empty:
             fig1 = go.Figure()
-            fig1.add_trace(go.Scatter(x=trend['BulanStr'], y=trend['Masuk'], mode='lines+markers+text',
-                                      name='Inbound', line=dict(color='#4B8BBE',width=2), marker=dict(size=8),
-                                      text=trend['Masuk'].apply(lambda x: f'{x:,.0f}'), textposition='top center'))
-            fig1.add_trace(go.Scatter(x=trend['BulanStr'], y=trend['Keluar'], mode='lines+markers+text',
-                                      name='Outbound', line=dict(color='#E67E22',width=2), marker=dict(size=8),
-                                      text=trend['Keluar'].apply(lambda x: f'{x:,.0f}'), textposition='top center'))
-            fig1.update_layout(height=400, xaxis_title='Periode', yaxis_title='Quantity',
-                              legend=dict(orientation='h', yanchor='bottom', y=-0.25, xanchor='center', x=0.5),
-                              xaxis=dict(tickangle=-45))
+            fig1.add_trace(go.Scatter(
+                x=trend['BulanStr'], y=trend['Masuk'], mode='lines+markers+text',
+                name='Inbound', line=dict(color='#4B8BBE', width=2), marker=dict(size=8),
+                text=trend['Masuk'].apply(lambda x: f'{x:,.0f}'), textposition='top center'
+            ))
+            fig1.add_trace(go.Scatter(
+                x=trend['BulanStr'], y=trend['Keluar'], mode='lines+markers+text',
+                name='Outbound', line=dict(color='#E67E22', width=2), marker=dict(size=8),
+                text=trend['Keluar'].apply(lambda x: f'{x:,.0f}'), textposition='top center'
+            ))
+            fig1.update_layout(
+                height=400, xaxis_title='Periode', yaxis_title='Quantity',
+                legend=dict(orientation='h', yanchor='bottom', y=-0.25, xanchor='center', x=0.5),
+                xaxis=dict(tickangle=-45)
+            )
             st.plotly_chart(fig1, use_container_width=True, config={'displayModeBar': False})
     
     st.markdown("---")
     
     # ============================================================
-    # 2. TOP 10 COST MATERIAL (BAR CHART)
+    # 2. TOP 10 COST MATERIAL
     # ============================================================
     st.subheader("💰 TOP 10 Cost Material")
     top_cost = pivot_cost.nlargest(10, 'TOTAL_COST').sort_values('TOTAL_COST', ascending=True)
@@ -593,20 +537,36 @@ def page_analisis():
     st.markdown("---")
     
     # ============================================================
-    # 3. TOP 10 INBOUND VS OUTBOUND (GROUPED BAR)
+    # 3. TOP 10 INBOUND VS OUTBOUND
     # ============================================================
     st.subheader("📥📤 TOP 10 Material: Inbound vs Outbound")
-    top_10 = f.groupby('Nama Material').agg(Masuk=('Masuk','sum'), Keluar=('Keluar','sum')).sum(axis=1).nlargest(10).index.tolist()
-    agg = f[f['Nama Material'].isin(top_10)].groupby('Nama Material').agg(Masuk=('Masuk','sum'), Keluar=('Keluar','sum')).reset_index().sort_values('Masuk', ascending=True)
+    top_10 = f.groupby('Nama Material').agg(
+        Masuk=('Masuk', 'sum'),
+        Keluar=('Keluar', 'sum')
+    ).sum(axis=1).nlargest(10).index.tolist()
+    
+    agg = f[f['Nama Material'].isin(top_10)].groupby('Nama Material').agg(
+        Masuk=('Masuk', 'sum'),
+        Keluar=('Keluar', 'sum')
+    ).reset_index().sort_values('Masuk', ascending=True)
     
     if not agg.empty:
         fig3 = go.Figure()
-        fig3.add_trace(go.Bar(y=agg['Nama Material'], x=agg['Masuk'], name='Inbound', orientation='h',
-                              marker=dict(color='#4B8BBE'), text=agg['Masuk'].apply(lambda x: f'{x:,.0f}'), textposition='outside'))
-        fig3.add_trace(go.Bar(y=agg['Nama Material'], x=agg['Keluar'], name='Outbound', orientation='h',
-                              marker=dict(color='#E67E22'), text=agg['Keluar'].apply(lambda x: f'{x:,.0f}'), textposition='outside'))
-        fig3.update_layout(barmode='group', height=400, margin=dict(l=200, r=80, t=30, b=60),
-                          legend=dict(orientation='h', yanchor='bottom', y=-0.25, xanchor='center', x=0.5))
+        fig3.add_trace(go.Bar(
+            y=agg['Nama Material'], x=agg['Masuk'], name='Inbound', orientation='h',
+            marker=dict(color='#4B8BBE'),
+            text=agg['Masuk'].apply(lambda x: f'{x:,.0f}'), textposition='outside'
+        ))
+        fig3.add_trace(go.Bar(
+            y=agg['Nama Material'], x=agg['Keluar'], name='Outbound', orientation='h',
+            marker=dict(color='#E67E22'),
+            text=agg['Keluar'].apply(lambda x: f'{x:,.0f}'), textposition='outside'
+        ))
+        fig3.update_layout(
+            barmode='group', height=400,
+            margin=dict(l=200, r=80, t=30, b=60),
+            legend=dict(orientation='h', yanchor='bottom', y=-0.25, xanchor='center', x=0.5)
+        )
         st.plotly_chart(fig3, use_container_width=True, config={'displayModeBar': False})
     
     st.markdown("---")
@@ -616,17 +576,33 @@ def page_analisis():
     # ============================================================
     if 'Gudang' in f.columns:
         st.subheader("🏢 TOP 10 Gudang")
-        top_gudang = f.groupby('Gudang').agg(Keluar=('Keluar','sum'), Masuk=('Masuk','sum')).sum(axis=1).nlargest(10).index.tolist()
-        agg_g = f[f['Gudang'].isin(top_gudang)].groupby('Gudang').agg(Masuk=('Masuk','sum'), Keluar=('Keluar','sum')).reset_index().sort_values('Masuk', ascending=True)
+        top_gudang = f.groupby('Gudang').agg(
+            Keluar=('Keluar', 'sum'),
+            Masuk=('Masuk', 'sum')
+        ).sum(axis=1).nlargest(10).index.tolist()
+        
+        agg_g = f[f['Gudang'].isin(top_gudang)].groupby('Gudang').agg(
+            Masuk=('Masuk', 'sum'),
+            Keluar=('Keluar', 'sum')
+        ).reset_index().sort_values('Masuk', ascending=True)
         
         if not agg_g.empty:
             fig4 = go.Figure()
-            fig4.add_trace(go.Bar(y=agg_g['Gudang'], x=agg_g['Masuk'], name='Inbound', orientation='h',
-                                  marker=dict(color='#4B8BBE'), text=agg_g['Masuk'].apply(lambda x: f'{x:,.0f}'), textposition='outside'))
-            fig4.add_trace(go.Bar(y=agg_g['Gudang'], x=agg_g['Keluar'], name='Outbound', orientation='h',
-                                  marker=dict(color='#E67E22'), text=agg_g['Keluar'].apply(lambda x: f'{x:,.0f}'), textposition='outside'))
-            fig4.update_layout(barmode='group', height=350, margin=dict(l=120, r=80, t=30, b=60),
-                              legend=dict(orientation='h', yanchor='bottom', y=-0.25, xanchor='center', x=0.5))
+            fig4.add_trace(go.Bar(
+                y=agg_g['Gudang'], x=agg_g['Masuk'], name='Inbound', orientation='h',
+                marker=dict(color='#4B8BBE'),
+                text=agg_g['Masuk'].apply(lambda x: f'{x:,.0f}'), textposition='outside'
+            ))
+            fig4.add_trace(go.Bar(
+                y=agg_g['Gudang'], x=agg_g['Keluar'], name='Outbound', orientation='h',
+                marker=dict(color='#E67E22'),
+                text=agg_g['Keluar'].apply(lambda x: f'{x:,.0f}'), textposition='outside'
+            ))
+            fig4.update_layout(
+                barmode='group', height=350,
+                margin=dict(l=120, r=80, t=30, b=60),
+                legend=dict(orientation='h', yanchor='bottom', y=-0.25, xanchor='center', x=0.5)
+            )
             st.plotly_chart(fig4, use_container_width=True, config={'displayModeBar': False})
     
     st.markdown("---")
@@ -635,7 +611,7 @@ def page_analisis():
     # 5. TABEL DETAIL
     # ============================================================
     st.subheader("📋 Detail Pemakaian Material")
-    cols = ['Tanggal','Nama Material','Masuk','Keluar','Stok','Gudang','Keterangan','Transaksi','JobType','TOTAL_COST']
+    cols = ['Tanggal', 'Nama Material', 'Masuk', 'Keluar', 'Stok', 'Gudang', 'Keterangan', 'Transaksi', 'JobType', 'TOTAL_COST']
     cols = [c for c in cols if c in f.columns]
     if 'Tanggal' in f.columns:
         f = f.sort_values('Tanggal', ascending=False)
