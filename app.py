@@ -179,7 +179,7 @@ def load_all():
         res['cik'] = dc
     except: pass
 
-    # PEMAKAIAN (SHEET GABUNGAN) - HARGA_D365 TANPA TITIK
+    # PEMAKAIAN (SHEET GABUNGAN)
     try:
         sh = cl.open_by_key(MASTER_GABUNGAN_ID)
         ws = sh.worksheet('Gabungan')
@@ -216,7 +216,6 @@ def load_all():
                     try: s = float(stok.replace(',','')) if stok else 0.0
                     except: s = 0.0
                     
-                    # PERBAIKI HARGA_D365: hapus titik pemisah ribuan
                     try:
                         if '.' in harga_raw and ',' not in harga_raw:
                             h = float(harga_raw.replace('.', ''))
@@ -356,36 +355,12 @@ def page_analisis():
     st.title("📊 Analisis Pemakaian Material")
     data = load_all()
     df_pakai = data.get('pemakaian', pd.DataFrame()).copy()
-
-        # ==== DEBUG: LIHAT DATA YANG HARGA_D365 = 0 ====
-    with st.expander("🔍 DEBUG: HARGA_D365 Check", expanded=True):
-        total_rows = len(df_pakai)
-        with_harga = len(df_pakai[df_pakai['HARGA_D365'] > 0])
-        without_harga = len(df_pakai[df_pakai['HARGA_D365'] == 0])
-        total_keluar_all = df_pakai['Keluar'].sum()
-        total_keluar_with_harga = df_pakai[df_pakai['HARGA_D365'] > 0]['Keluar'].sum()
-        total_keluar_without_harga = df_pakai[df_pakai['HARGA_D365'] == 0]['Keluar'].sum()
-        
-        st.write(f"**Total baris:** {total_rows}")
-        st.write(f"**Baris dengan HARGA_D365 > 0:** {with_harga}")
-        st.write(f"**Baris dengan HARGA_D365 = 0:** {without_harga}")
-        st.write(f"**Total Keluar (semua):** {total_keluar_all:,.0f}")
-        st.write(f"**Total Keluar (dengan HARGA_D365):** {total_keluar_with_harga:,.0f}")
-        st.write(f"**Total Keluar (tanpa HARGA_D365):** {total_keluar_without_harga:,.0f}")
-        
-        # Material dengan HARGA_D365 = 0
-        st.write("**Material dengan HARGA_D365 = 0:**")
-        zero_harga = df_pakai[df_pakai['HARGA_D365'] == 0]
-        if not zero_harga.empty:
-            st.dataframe(zero_harga.groupby('Nama Material').agg(Keluar=('Keluar','sum')).sort_values('Keluar', ascending=False).head(30), use_container_width=True)
     
     if df_pakai.empty:
         st.warning("Data pemakaian (sheet Gabungan) belum tersedia.")
         return
     
-    # ============================================================
-    # NORMALISASI NAMA MATERIAL
-    # ============================================================
+    # Normalisasi nama
     nama_map = {
         'water coollant reco-cool - drum': 'WATER COOLLANT RECO-COOL',
         'water coollant reco-cool multiroad-drum': 'WATER COOLLANT RECO-COOL',
@@ -399,259 +374,125 @@ def page_analisis():
         'coolant filter wf2076 fleetguard': 'COOLANT FILTER WF2076',
         'oil shell rimula r3mv 15w-40 (drum @ 209 ltr)': 'OIL SHELL RIMULA R3MV',
         'oli rimula r4 x 15w-40 (ibc @ 1000 liter)': 'OLI RIMULA R4 (IBC)',
-        'module deepsea 8610': 'MODUL 8610 DEEPSEA',
-        'modul 8610 deepsea': 'MODUL 8610 DEEPSEA',
         'filter separator fs 1006 fleetguard': 'FILTER SEPARATOR FS1006',
         'oil filter lf3325 fleetguard': 'OIL FILTER LF3325',
         'element air filter aho1135': 'ELEMENT AIR FILTER AHO1135',
-        'control governor 306232220': 'CONTROL GOVERNOR',
-        'push rod 3017961 cummins': 'PUSH ROD',
-        'valve push rod 3057139 cummins': 'VALVE PUSH ROD',
-        'v-belt 3015257 cummins': 'V-BELT 3015257',
-        'v-belt 5412990 cummins': 'V-BELT 5412990',
-        'v-belt 5413003 cummins': 'V-BELT 5413003',
-        'injector 3095773 cummins': 'INJECTOR',
-        'actuator etr fuel control 3408326': 'ACTUATOR',
-        'mpu 4914162 cummins': 'MPU',
-        'relay my2 24 vdc omron': 'RELAY MY2',
-        'relay my4 24 vdc omron': 'RELAY MY4',
-        'kepala accu timah (+)(-)': 'KEPALA ACCU TIMAH',
-        'socket relay my2': 'SOCKET RELAY MY2',
-        'ct dropkit 1250 kva cummins': 'CT DROPKIT',
-        'dinamo ampere 3016627': 'DINAMO AMPERE',
-        'dinamo ampere 3631678 cummins': 'DINAMO AMPERE',
-        'switch oil 10mm vdo original': 'SWITCH OIL 10MM VDO',
-        'switch oil 10mm vdo': 'SWITCH OIL 10MM VDO',
-        'fuse 125 a 24 kv/40ka fort': 'FUSE 125A',
-        'solenoid 3096857 cummins': 'SOLENOID',
-        'stc fuel system 3063022 cummins': 'STC FUEL SYSTEM',
-        'molded hose 3631572 cummins': 'MOLDED HOSE',
-        'shock absorber 3008018': 'SHOCK ABSORBER',
-        'temperatur switch sensor 120 derajat celcius': 'TEMPERATUR SWITCH',
-        'avr d350 leroy somer': 'AVR D350',
-        'accu 12v n150 yuasa': 'ACCU 12V N150',
-        'uvr abb sace emax-2 yu-1sda073700r1': 'UVR SACE EMAX-2',
-        'uvr sace emax-2 yo/yc-1sda073674r1': 'UVR SACE EMAX-2',
-        'skun 300 mm': 'SKUN 300MM',
-        'varistor': 'VARISTOR',
-        'elictpart / trip unit control unit acb sace ekip dip li 2000a': 'TRIP UNIT ACB',
     }
     df_pakai['Nama Material'] = df_pakai['Nama Material'].str.strip().str.lower()
     df_pakai['Nama Material'] = df_pakai['Nama Material'].apply(lambda x: nama_map.get(x, x.upper()))
     
-    # ============================================================
-    # NUMERIK & TANGGAL
-    # ============================================================
+    # Numerik
     for col in ['Masuk', 'Keluar', 'Stok', 'TOTAL_COST']:
         if col in df_pakai.columns:
             df_pakai[col] = pd.to_numeric(df_pakai[col], errors='coerce').fillna(0)
     
-    # ============================================================
-    # TANGGAL (JANGAN DROP YANG KOSONG)
-    # ============================================================
+    # Tanggal (TANPA dropna)
     if 'Tanggal' in df_pakai.columns:
         df_pakai['Tanggal'] = pd.to_datetime(df_pakai['Tanggal'], errors='coerce')
-        # JANGAN dropna! Biarkan yang kosong tetap ada
         df_pakai['Tahun'] = df_pakai['Tanggal'].dt.year.astype('Int64').astype(str).replace('<NA>', '')
         bulan_map = {1:'Jan',2:'Feb',3:'Mar',4:'Apr',5:'Mei',6:'Jun',
                      7:'Jul',8:'Ags',9:'Sep',10:'Okt',11:'Nov',12:'Des'}
         df_pakai['Periode'] = df_pakai['Tanggal'].dt.month.map(bulan_map).fillna('')
         df_pakai['BulanStr'] = df_pakai['Tanggal'].dt.strftime('%Y-%m').replace('NaT', '')
     
-      # ============================================================
-    # SIDEBAR FILTER (DENGAN DEBUG)
-    # ============================================================
+    # Filter sidebar
     st.sidebar.header("🎯 Filter Analisis")
-    
     nama_opts = sorted(df_pakai['Nama Material'].unique().astype(str))
     sel_nama = st.sidebar.multiselect("📦 Nama Material", nama_opts, default=[])
-    
     gudang_opts = sorted(df_pakai['Gudang'].dropna().unique().astype(str)) if 'Gudang' in df_pakai.columns else []
     sel_gudang = st.sidebar.multiselect("🏢 Gudang", gudang_opts, default=[])
-    
     jobtype_opts = sorted(df_pakai['JobType'].dropna().unique().astype(str)) if 'JobType' in df_pakai.columns else []
     sel_jobtype = st.sidebar.multiselect("📋 JobType", jobtype_opts, default=[])
-    
-    tahun_opts = sorted(df_pakai['Tahun'].dropna().astype(str).unique()) if 'Tahun' in df_pakai.columns else []
+    tahun_opts = sorted([t for t in df_pakai['Tahun'].unique() if t and t != '<NA>']) if 'Tahun' in df_pakai.columns else []
     sel_tahun = st.sidebar.multiselect("📅 Tahun", tahun_opts, default=[])
-    
     periode_opts = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Ags','Sep','Okt','Nov','Des']
     sel_periode = st.sidebar.multiselect("🗓️ Bulan", periode_opts, default=[])
     
-    # ==== FILTER DATA ====
+    # Filter data
     f = df_pakai.copy()
+    if sel_nama: f = f[f['Nama Material'].astype(str).isin(sel_nama)]
+    if sel_gudang: f = f[f['Gudang'].astype(str).isin(sel_gudang)]
+    if sel_jobtype: f = f[f['JobType'].astype(str).isin(sel_jobtype)]
+    if sel_tahun: f = f[f['Tahun'].astype(str).isin(sel_tahun)]
+    if sel_periode: f = f[f['Periode'].astype(str).isin(sel_periode)]
     
-    # Debug: lihat kondisi sebelum filter
-    st.write(f"DEBUG: Sebelum filter: {len(f)} baris")
-    
-    if sel_nama and len(sel_nama) > 0:
-        f = f[f['Nama Material'].astype(str).isin(sel_nama)]
-        st.write(f"DEBUG: Setelah filter Nama: {len(f)} baris")
-    if sel_gudang and len(sel_gudang) > 0:
-        f = f[f['Gudang'].astype(str).isin(sel_gudang)]
-        st.write(f"DEBUG: Setelah filter Gudang: {len(f)} baris")
-    if sel_jobtype and len(sel_jobtype) > 0:
-        f = f[f['JobType'].astype(str).isin(sel_jobtype)]
-        st.write(f"DEBUG: Setelah filter JobType: {len(f)} baris")
-    if sel_tahun and len(sel_tahun) > 0:
-        f = f[f['Tahun'].astype(str).isin(sel_tahun)]
-        st.write(f"DEBUG: Setelah filter Tahun: {len(f)} baris")
-    if sel_periode and len(sel_periode) > 0:
-        f = f[f['Periode'].astype(str).isin(sel_periode)]
-        st.write(f"DEBUG: Setelah filter Bulan: {len(f)} baris")
-    
-    # ============================================================
-    # PIVOT COST
-    # ============================================================
-    pivot_cost = f.pivot_table(
-        index='Nama Material',
-        values=['Keluar', 'TOTAL_COST'],
-        aggfunc={'Keluar': 'sum', 'TOTAL_COST': 'sum'}
-    )
+    # Pivot Cost
+    pivot_cost = f.pivot_table(index='Nama Material', values=['Keluar','TOTAL_COST'], aggfunc={'Keluar':'sum','TOTAL_COST':'sum'})
     pivot_cost = pivot_cost[pivot_cost['TOTAL_COST'] > 0]
     grand_total_cost = pivot_cost['TOTAL_COST'].sum()
     
-    # ============================================================
-    # KPI CARDS
-    # ============================================================
+    # KPI
     st.subheader("📈 Ringkasan Pemakaian")
-    k1, k2, k3, k4 = st.columns(4)
+    k1,k2,k3,k4 = st.columns(4)
     k1.metric("Total Transaksi", len(f))
     k2.metric("Total Keluar", f"{pivot_cost['Keluar'].sum():,.0f}")
     k3.metric("Material Unik", len(pivot_cost))
     k4.metric("💰 Grand Total Cost", f"Rp {grand_total_cost:,.0f}")
-    
     st.markdown("---")
     
-    # ============================================================
-    # 1. TREN PEMAKAIAN MATERIAL
-    # ============================================================
+    # TREN
     st.subheader("📈 Tren Pemakaian Material")
-    if 'BulanStr' in f.columns:
-        trend = f.groupby('BulanStr').agg(
-            Masuk=('Masuk', 'sum'),
-            Keluar=('Keluar', 'sum')
-        ).reset_index().sort_values('BulanStr')
-        
-        if not trend.empty:
-            fig1 = go.Figure()
-            fig1.add_trace(go.Scatter(
-                x=trend['BulanStr'], y=trend['Masuk'], mode='lines+markers+text',
-                name='Inbound', line=dict(color='#4B8BBE', width=2), marker=dict(size=8),
-                text=trend['Masuk'].apply(lambda x: f'{x:,.0f}'), textposition='top center'
-            ))
-            fig1.add_trace(go.Scatter(
-                x=trend['BulanStr'], y=trend['Keluar'], mode='lines+markers+text',
-                name='Outbound', line=dict(color='#E67E22', width=2), marker=dict(size=8),
-                text=trend['Keluar'].apply(lambda x: f'{x:,.0f}'), textposition='top center'
-            ))
-            fig1.update_layout(
-                height=400, xaxis_title='Periode', yaxis_title='Quantity',
-                legend=dict(orientation='h', yanchor='bottom', y=-0.25, xanchor='center', x=0.5),
-                xaxis=dict(tickangle=-45)
-            )
-            st.plotly_chart(fig1, use_container_width=True, config={'displayModeBar': False})
-    
+    trend = f[f['BulanStr'] != ''].groupby('BulanStr').agg(Masuk=('Masuk','sum'), Keluar=('Keluar','sum')).reset_index().sort_values('BulanStr')
+    if not trend.empty:
+        fig1 = go.Figure()
+        fig1.add_trace(go.Scatter(x=trend['BulanStr'], y=trend['Masuk'], mode='lines+markers+text', name='Inbound',
+                                  line=dict(color='#4B8BBE',width=2), marker=dict(size=8),
+                                  text=trend['Masuk'].apply(lambda x: f'{x:,.0f}'), textposition='top center'))
+        fig1.add_trace(go.Scatter(x=trend['BulanStr'], y=trend['Keluar'], mode='lines+markers+text', name='Outbound',
+                                  line=dict(color='#E67E22',width=2), marker=dict(size=8),
+                                  text=trend['Keluar'].apply(lambda x: f'{x:,.0f}'), textposition='top center'))
+        fig1.update_layout(height=400, xaxis_title='Periode', yaxis_title='Quantity',
+                          legend=dict(orientation='h', yanchor='bottom', y=-0.25, xanchor='center', x=0.5), xaxis=dict(tickangle=-45))
+        st.plotly_chart(fig1, use_container_width=True)
     st.markdown("---")
     
-    # ============================================================
-    # 2. TOP 10 COST MATERIAL
-    # ============================================================
+    # TOP 10 COST
     st.subheader("💰 TOP 10 Cost Material")
     top_cost = pivot_cost.nlargest(10, 'TOTAL_COST').sort_values('TOTAL_COST', ascending=True)
-    
     if not top_cost.empty:
         fig2 = go.Figure()
-        fig2.add_trace(go.Bar(
-            y=top_cost.index, x=top_cost['TOTAL_COST'], orientation='h',
-            marker=dict(color='#27AE60'),
-            text=top_cost['TOTAL_COST'].apply(lambda x: f'Rp {x:,.0f}'),
-            textposition='outside'
-        ))
-        fig2.update_layout(height=400, margin=dict(l=300, r=100, t=30, b=20))
-        st.plotly_chart(fig2, use_container_width=True, config={'displayModeBar': False})
-    
+        fig2.add_trace(go.Bar(y=top_cost.index, x=top_cost['TOTAL_COST'], orientation='h', marker=dict(color='#27AE60'),
+                              text=top_cost['TOTAL_COST'].apply(lambda x: f'Rp {x:,.0f}'), textposition='outside'))
+        fig2.update_layout(height=400, margin=dict(l=250, r=100, t=30, b=20))
+        st.plotly_chart(fig2, use_container_width=True)
     st.markdown("---")
     
-    # ============================================================
-    # 3. TOP 10 INBOUND VS OUTBOUND
-    # ============================================================
+    # TOP 10 INBOUND VS OUTBOUND
     st.subheader("📥📤 TOP 10 Material: Inbound vs Outbound")
-    top_10 = f.groupby('Nama Material').agg(
-        Masuk=('Masuk', 'sum'),
-        Keluar=('Keluar', 'sum')
-    ).sum(axis=1).nlargest(10).index.tolist()
-    
-    agg = f[f['Nama Material'].isin(top_10)].groupby('Nama Material').agg(
-        Masuk=('Masuk', 'sum'),
-        Keluar=('Keluar', 'sum')
-    ).reset_index().sort_values('Masuk', ascending=True)
-    
+    top_10 = f.groupby('Nama Material').agg(Masuk=('Masuk','sum'), Keluar=('Keluar','sum')).sum(axis=1).nlargest(10).index.tolist()
+    agg = f[f['Nama Material'].isin(top_10)].groupby('Nama Material').agg(Masuk=('Masuk','sum'), Keluar=('Keluar','sum')).reset_index().sort_values('Masuk', ascending=True)
     if not agg.empty:
         fig3 = go.Figure()
-        fig3.add_trace(go.Bar(
-            y=agg['Nama Material'], x=agg['Masuk'], name='Inbound', orientation='h',
-            marker=dict(color='#4B8BBE'),
-            text=agg['Masuk'].apply(lambda x: f'{x:,.0f}'), textposition='outside'
-        ))
-        fig3.add_trace(go.Bar(
-            y=agg['Nama Material'], x=agg['Keluar'], name='Outbound', orientation='h',
-            marker=dict(color='#E67E22'),
-            text=agg['Keluar'].apply(lambda x: f'{x:,.0f}'), textposition='outside'
-        ))
-        fig3.update_layout(
-            barmode='group', height=400,
-            margin=dict(l=200, r=80, t=30, b=60),
-            legend=dict(orientation='h', yanchor='bottom', y=-0.25, xanchor='center', x=0.5)
-        )
-        st.plotly_chart(fig3, use_container_width=True, config={'displayModeBar': False})
-    
+        fig3.add_trace(go.Bar(y=agg['Nama Material'], x=agg['Masuk'], name='Inbound', orientation='h', marker=dict(color='#4B8BBE'),
+                              text=agg['Masuk'].apply(lambda x: f'{x:,.0f}'), textposition='outside'))
+        fig3.add_trace(go.Bar(y=agg['Nama Material'], x=agg['Keluar'], name='Outbound', orientation='h', marker=dict(color='#E67E22'),
+                              text=agg['Keluar'].apply(lambda x: f'{x:,.0f}'), textposition='outside'))
+        fig3.update_layout(barmode='group', height=400, margin=dict(l=200, r=80, t=30, b=60),
+                          legend=dict(orientation='h', yanchor='bottom', y=-0.25, xanchor='center', x=0.5))
+        st.plotly_chart(fig3, use_container_width=True)
     st.markdown("---")
     
-    # ============================================================
-    # 4. TOP 10 GUDANG
-    # ============================================================
+    # TOP 10 GUDANG
     if 'Gudang' in f.columns:
         st.subheader("🏢 TOP 10 Gudang")
-        top_gudang = f.groupby('Gudang').agg(
-            Keluar=('Keluar', 'sum'),
-            Masuk=('Masuk', 'sum')
-        ).sum(axis=1).nlargest(10).index.tolist()
-        
-        agg_g = f[f['Gudang'].isin(top_gudang)].groupby('Gudang').agg(
-            Masuk=('Masuk', 'sum'),
-            Keluar=('Keluar', 'sum')
-        ).reset_index().sort_values('Masuk', ascending=True)
-        
+        top_gudang = f.groupby('Gudang').agg(Keluar=('Keluar','sum'), Masuk=('Masuk','sum')).sum(axis=1).nlargest(10).index.tolist()
+        agg_g = f[f['Gudang'].isin(top_gudang)].groupby('Gudang').agg(Masuk=('Masuk','sum'), Keluar=('Keluar','sum')).reset_index().sort_values('Masuk', ascending=True)
         if not agg_g.empty:
             fig4 = go.Figure()
-            fig4.add_trace(go.Bar(
-                y=agg_g['Gudang'], x=agg_g['Masuk'], name='Inbound', orientation='h',
-                marker=dict(color='#4B8BBE'),
-                text=agg_g['Masuk'].apply(lambda x: f'{x:,.0f}'), textposition='outside'
-            ))
-            fig4.add_trace(go.Bar(
-                y=agg_g['Gudang'], x=agg_g['Keluar'], name='Outbound', orientation='h',
-                marker=dict(color='#E67E22'),
-                text=agg_g['Keluar'].apply(lambda x: f'{x:,.0f}'), textposition='outside'
-            ))
-            fig4.update_layout(
-                barmode='group', height=350,
-                margin=dict(l=120, r=80, t=30, b=60),
-                legend=dict(orientation='h', yanchor='bottom', y=-0.25, xanchor='center', x=0.5)
-            )
-            st.plotly_chart(fig4, use_container_width=True, config={'displayModeBar': False})
-    
+            fig4.add_trace(go.Bar(y=agg_g['Gudang'], x=agg_g['Masuk'], name='Inbound', orientation='h', marker=dict(color='#4B8BBE'),
+                                  text=agg_g['Masuk'].apply(lambda x: f'{x:,.0f}'), textposition='outside'))
+            fig4.add_trace(go.Bar(y=agg_g['Gudang'], x=agg_g['Keluar'], name='Outbound', orientation='h', marker=dict(color='#E67E22'),
+                                  text=agg_g['Keluar'].apply(lambda x: f'{x:,.0f}'), textposition='outside'))
+            fig4.update_layout(barmode='group', height=350, margin=dict(l=120, r=80, t=30, b=60),
+                              legend=dict(orientation='h', yanchor='bottom', y=-0.25, xanchor='center', x=0.5))
+            st.plotly_chart(fig4, use_container_width=True)
     st.markdown("---")
     
-    # ============================================================
-    # 5. TABEL DETAIL
-    # ============================================================
+    # TABEL DETAIL
     st.subheader("📋 Detail Pemakaian Material")
-    cols = ['Tanggal', 'Nama Material', 'Masuk', 'Keluar', 'Stok', 'Gudang', 'Keterangan', 'Transaksi', 'JobType', 'TOTAL_COST']
+    cols = ['Tanggal','Nama Material','Masuk','Keluar','Stok','Gudang','Keterangan','Transaksi','JobType','TOTAL_COST']
     cols = [c for c in cols if c in f.columns]
-    if 'Tanggal' in f.columns:
-        f = f.sort_values('Tanggal', ascending=False)
+    if 'Tanggal' in f.columns: f = f.sort_values('Tanggal', ascending=False)
     st.dataframe(f[cols], use_container_width=True, hide_index=True, height=400)
 
 def page_pemakaian(): st.title("🔥 Pemakaian Material"); st.info("Segera hadir.")
