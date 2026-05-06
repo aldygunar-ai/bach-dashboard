@@ -542,21 +542,8 @@ def page_propose():
     prev['Status'] = prev.apply(get_status, axis=1)
     prev = prev[prev['Keb_Aktual'] > 0]
     if sel_status: prev = prev[prev['Status'].isin(sel_status)]
-    
-    # 1. Sisa Stok
-    st.subheader("⏳ Sisa Stok Preventive dalam Bulan")
-    sp = prev.pivot_table(index=['Kode Material','Nama Material'], columns='PLTD', values='Sisa_Bulan', aggfunc='first', fill_value=0.0)
-    sp = sp.reset_index()
-    pltd_cols_s = [c for c in sp.columns if c not in ('Kode Material','Nama Material')]
-    sp = sp[['Kode Material','Nama Material'] + pltd_cols_s]
-    cfg_s = {'Kode Material': st.column_config.TextColumn(pinned=True), 'Nama Material': st.column_config.TextColumn(pinned=True)}
-    for col in pltd_cols_s: cfg_s[col] = st.column_config.NumberColumn(format="%.1f")
-    def hl(val):
-        if isinstance(val, (int,float)) and val <= 1.5: return 'background-color: #ffcccc; color: #cc0000; font-weight: bold;'
-        return ''
-    st.dataframe(sp.style.map(hl, subset=pltd_cols_s), column_config=cfg_s, use_container_width=True, hide_index=True)
-    st.markdown("---")
 
+    
         with st.expander("🔍 Debug PLTD Hilang", expanded=True):
         st.write("**PLTD di Stok:**", sorted(df_stock['PLTD'].unique()))
         st.write("**PLTD di M1:**", sorted(m1_use['PLTD'].unique()))
@@ -571,6 +558,20 @@ def page_propose():
             di_propose = p in propose['PLTD'].values
             di_prev = p in prev['PLTD'].values
             st.write(f"- **{p}**: Stok={di_stok}, M1={di_m1}, Propose={di_propose}, Prev={di_prev}")
+    
+    # 1. Sisa Stok
+    st.subheader("⏳ Sisa Stok Preventive dalam Bulan")
+    sp = prev.pivot_table(index=['Kode Material','Nama Material'], columns='PLTD', values='Sisa_Bulan', aggfunc='first', fill_value=0.0)
+    sp = sp.reset_index()
+    pltd_cols_s = [c for c in sp.columns if c not in ('Kode Material','Nama Material')]
+    sp = sp[['Kode Material','Nama Material'] + pltd_cols_s]
+    cfg_s = {'Kode Material': st.column_config.TextColumn(pinned=True), 'Nama Material': st.column_config.TextColumn(pinned=True)}
+    for col in pltd_cols_s: cfg_s[col] = st.column_config.NumberColumn(format="%.1f")
+    def hl(val):
+        if isinstance(val, (int,float)) and val <= 1.5: return 'background-color: #ffcccc; color: #cc0000; font-weight: bold;'
+        return ''
+    st.dataframe(sp.style.map(hl, subset=pltd_cols_s), column_config=cfg_s, use_container_width=True, hide_index=True)
+    st.markdown("---")
     
     # 2. Kebutuhan PM
     st.subheader("📋 Kebutuhan Per Bulan Sesuai PM")
