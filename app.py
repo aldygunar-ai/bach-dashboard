@@ -455,35 +455,47 @@ def page_analisis():
         df_pakai['Periode'] = df_pakai['Tanggal'].dt.month.map(bulan_map)
         df_pakai['BulanStr'] = df_pakai['Tanggal'].dt.strftime('%Y-%m')
     
-    # ============================================================
-    # SIDEBAR FILTER
+      # ============================================================
+    # SIDEBAR FILTER (DENGAN DEBUG)
     # ============================================================
     st.sidebar.header("🎯 Filter Analisis")
     
     nama_opts = sorted(df_pakai['Nama Material'].unique().astype(str))
     sel_nama = st.sidebar.multiselect("📦 Nama Material", nama_opts, default=[])
     
-    gudang_opts = sorted(df_pakai['Gudang'].unique().astype(str)) if 'Gudang' in df_pakai.columns else []
+    gudang_opts = sorted(df_pakai['Gudang'].dropna().unique().astype(str)) if 'Gudang' in df_pakai.columns else []
     sel_gudang = st.sidebar.multiselect("🏢 Gudang", gudang_opts, default=[])
     
-    jobtype_opts = sorted(df_pakai['JobType'].unique().astype(str)) if 'JobType' in df_pakai.columns else []
+    jobtype_opts = sorted(df_pakai['JobType'].dropna().unique().astype(str)) if 'JobType' in df_pakai.columns else []
     sel_jobtype = st.sidebar.multiselect("📋 JobType", jobtype_opts, default=[])
     
-    tahun_opts = sorted(df_pakai['Tahun'].astype(str).unique()) if 'Tahun' in df_pakai.columns else []
+    tahun_opts = sorted(df_pakai['Tahun'].dropna().astype(str).unique()) if 'Tahun' in df_pakai.columns else []
     sel_tahun = st.sidebar.multiselect("📅 Tahun", tahun_opts, default=[])
     
     periode_opts = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Ags','Sep','Okt','Nov','Des']
     sel_periode = st.sidebar.multiselect("🗓️ Bulan", periode_opts, default=[])
     
-    # ============================================================
-    # FILTER DATA
-    # ============================================================
+    # ==== FILTER DATA ====
     f = df_pakai.copy()
-    if sel_nama: f = f[f['Nama Material'].astype(str).isin(sel_nama)]
-    if sel_gudang: f = f[f['Gudang'].astype(str).isin(sel_gudang)]
-    if sel_jobtype: f = f[f['JobType'].astype(str).isin(sel_jobtype)]
-    if sel_tahun: f = f[f['Tahun'].astype(str).isin(sel_tahun)]
-    if sel_periode: f = f[f['Periode'].astype(str).isin(sel_periode)]
+    
+    # Debug: lihat kondisi sebelum filter
+    st.write(f"DEBUG: Sebelum filter: {len(f)} baris")
+    
+    if sel_nama and len(sel_nama) > 0:
+        f = f[f['Nama Material'].astype(str).isin(sel_nama)]
+        st.write(f"DEBUG: Setelah filter Nama: {len(f)} baris")
+    if sel_gudang and len(sel_gudang) > 0:
+        f = f[f['Gudang'].astype(str).isin(sel_gudang)]
+        st.write(f"DEBUG: Setelah filter Gudang: {len(f)} baris")
+    if sel_jobtype and len(sel_jobtype) > 0:
+        f = f[f['JobType'].astype(str).isin(sel_jobtype)]
+        st.write(f"DEBUG: Setelah filter JobType: {len(f)} baris")
+    if sel_tahun and len(sel_tahun) > 0:
+        f = f[f['Tahun'].astype(str).isin(sel_tahun)]
+        st.write(f"DEBUG: Setelah filter Tahun: {len(f)} baris")
+    if sel_periode and len(sel_periode) > 0:
+        f = f[f['Periode'].astype(str).isin(sel_periode)]
+        st.write(f"DEBUG: Setelah filter Bulan: {len(f)} baris")
     
     # ============================================================
     # PIVOT COST
