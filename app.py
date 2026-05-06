@@ -433,6 +433,29 @@ def page_analisis():
     )
     pivot_cost = pivot_cost[pivot_cost['TOTAL_COST'] > 0]
     grand_total_cost = pivot_cost['TOTAL_COST'].sum()
+
+        # ==== DEBUG: CEK TOTAL COST TANPA FILTER ====
+    with st.expander("🔍 DEBUG: Total Cost Check", expanded=True):
+        # Pivot dari df_pakai (SEBELUM filter)
+        pivot_all = df_pakai.pivot_table(
+            index='Nama Material',
+            values=['Keluar', 'TOTAL_COST'],
+            aggfunc={'Keluar': 'sum', 'TOTAL_COST': 'sum'}
+        )
+        total_all = pivot_all['TOTAL_COST'].sum()
+        total_keluar_all = pivot_all['Keluar'].sum()
+        st.write(f"**TANPA FILTER:** Grand Total Cost = Rp {total_all:,.0f}, Total Keluar = {total_keluar_all:,.0f}, Material = {len(pivot_all)}")
+        
+        # Pivot dari f (SETELAH filter)
+        total_f = pivot_cost['TOTAL_COST'].sum()
+        total_keluar_f = pivot_cost['Keluar'].sum()
+        st.write(f"**DENGAN FILTER:** Grand Total Cost = Rp {total_f:,.0f}, Total Keluar = {total_keluar_f:,.0f}, Material = {len(pivot_cost)}")
+        
+        # Cek berapa material yang TOTAL_COST = 0
+        zero_cost = pivot_all[pivot_all['TOTAL_COST'] == 0]
+        st.write(f"**Material dengan TOTAL_COST = 0:** {len(zero_cost)}")
+        if not zero_cost.empty:
+            st.dataframe(zero_cost.head(20), use_container_width=True)
     
     # ============================================================
     # KPI CARDS
