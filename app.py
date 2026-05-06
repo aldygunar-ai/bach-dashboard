@@ -565,7 +565,16 @@ def page_propose():
         prev = prev[prev['PLTD'].isin(sel_pltd)]
     if sel_status:
         prev = prev[prev['Status'].isin(sel_status)]
-    
+
+        with st.expander("🔍 Debug Keb_Aktual", expanded=True):
+        st.write("**Sample data (Oli Shell di Bobong):**")
+        sample = prev[(prev['PLTD'] == 'BOBONG') & (prev['Kode Material'].str.contains('RIMULA', case=False, na=False))]
+        st.dataframe(sample[['PLTD', 'Kode Material', 'Nama Material', 'Qty', 'Keb_PM', 'Keb_Aktual']], use_container_width=True)
+        
+        st.write("**Nilai Keb_Aktual unik untuk Oli Shell:**")
+        oli_shell = prev[prev['Kode Material'].str.contains('RIMULA', case=False, na=False)]
+        st.write(oli_shell[['PLTD', 'Keb_Aktual']].drop_duplicates().to_dict('records'))
+        
     # ============================================================
     # HITUNG ULANG DENGAN JUMLAH BULAN YANG DIPILIH
     # ============================================================
