@@ -530,19 +530,43 @@ def page_propose():
     # Filter hanya Preventive
     propose = propose[propose['Jenis'] == 'Preventive']
     
-    # Hitung
-    propose['Sisa_Bulan'] = np.where(
-        propose['Keb_Aktual'] > 0,
-        np.floor(propose['Qty'] / propose['Keb_Aktual'] * 10) / 10,
+    # ============================================================
+    # FILTER SIDEBAR
+    # ============================================================
+    st.sidebar.header("🎯 Filter Propose")
+    
+    # Filter PLTD — tampilkan SEMUA PLTD dari stok (bukan hanya dari M1)
+    pltd_opts = sorted(df_stock['PLTD'].unique())
+    sel_pltd = st.sidebar.multiselect("📍 PLTD", pltd_opts, default=[])
+    
+    # Filter jumlah bulan (1-12)
+    jumlah_bulan = st.sidebar.slider("📅 Jumlah Bulan Order", min_value=1, max_value=12, value=3, step=1)
+    
+    status_opts = ['🔴 Urgent', '🟠 Warning', '🟡 Perlu Order', '🟢 Aman', '⚪ No Data']
+    sel_status = st.sidebar.multiselect("📊 Status", status_opts, default=[])
+    
+    # Terapkan filter
+    prev = propose.copy()
+    if sel_pltd:
+        prev = prev[prev['PLTD'].isin(sel_pltd)]
+    if sel_status:
+        prev = prev[prev['Status'].isin(sel_status)]
+    
+    # ============================================================
+    # HITUNG ULANG DENGAN JUMLAH BULAN YANG DIPILIH
+    # ============================================================
+    prev['Sisa_Bulan'] = np.where(
+        prev['Keb_Aktual'] > 0,
+        np.floor(prev['Qty'] / prev['Keb_Aktual'] * 10) / 10,
         0
     )
-    propose['Keb_3_Bulan'] = propose['Keb_Aktual'] * 3
-    propose['Propose_3_Bulan'] = np.ceil(np.maximum(0, propose['Keb_3_Bulan'] - propose['Qty']))
+    prev['Keb_N_Bulan'] = prev['Keb_Aktual'] * jumlah_bulan
+    prev['Propose_N_Bulan'] = np.ceil(np.maximum(0, prev['Keb_N_Bulan'] - prev['Qty']))
     
     def get_status(row):
         if row['Keb_Aktual'] <= 0:
             return '⚪ No Data'
-        if row['Qty'] >= row['Keb_3_Bulan']:
+        if row['Qty'] >= row['Keb_N_Bulan']:
             return '🟢 Aman'
         elif row['Sisa_Bulan'] < 1:
             return '🔴 Urgent'
@@ -551,25 +575,10 @@ def page_propose():
         else:
             return '🟡 Perlu Order'
     
-    propose['Status'] = propose.apply(get_status, axis=1)
+    prev['Status'] = prev.apply(get_status, axis=1)
     
-    prev = propose[propose['Keb_Aktual'] > 0].copy()
-    
-    # ============================================================
-    # FILTER (DEFAULT KOSONG)
-    # ============================================================
-    st.sidebar.header("🎯 Filter Propose")
-    
-    pltd_opts = sorted(prev['PLTD'].unique())
-    sel_pltd = st.sidebar.multiselect("📍 PLTD", pltd_opts, default=[])
-    
-    status_opts = ['🔴 Urgent', '🟠 Warning', '🟡 Perlu Order', '🟢 Aman', '⚪ No Data']
-    sel_status = st.sidebar.multiselect("📊 Status", status_opts, default=[])
-    
-    if sel_pltd:
-        prev = prev[prev['PLTD'].isin(sel_pltd)]
-    if sel_status:
-        prev = prev[prev['Status'].isin(sel_status)]
+    # Filter hanya yang ada kebutuhan
+    prev = prev[prev['Keb_Aktual'] > 0].copy()
     
     # ============================================================
     # 1. SISA STOK PREVENTIVE DALAM BULAN
@@ -652,16 +661,20 @@ def page_propose():
     # ============================================================
     # 4. DETAIL PROPOSE ORDER
     # ============================================================
-    st.subheader("📋 Detail Propose Order per Material")
+    st.subheader(f"📋 Detail Propose Order per Material ({jumlah_bulan} Bulan)")
     
-    cols_show = ['PLTD', 'Kode Material', 'Nama Material', 'Qty', 'Keb_Aktual', 'Sisa_Bulan', 'Keb_3_Bulan', 'Propose_3_Bulan', 'Status']
-    cols_show = [c for c in cols_show if c in prev.columns]
+    cols_show = ['PLTD', 'Kode Material', 'Nama Material', 'Qty', 'Keb_Aktual', 'Sisa_Bulan', f'Keb_{jumlah_bulan}_Bulan', f'Propose_{jumlah_bulan}_Bulan', 'Status']
+    prev_display = prev.rename(columns={
+        'Keb_N_Bulan': f'Keb_{jumlah_bulan}_Bulan',
+        'Propose_N_Bulan': f'Propose_{jumlah_bulan}_Bulan'
+    })
+    cols_show = [c for c in cols_show if c in prev_display.columns]
     
     status_order = {'🔴 Urgent': 0, '🟠 Warning': 1, '🟡 Perlu Order': 2, '🟢 Aman': 3}
-    prev['Status_Sort'] = prev['Status'].map(status_order)
-    prev = prev.sort_values(['Status_Sort', 'PLTD'])
+    prev_display['Status_Sort'] = prev_display['Status'].map(status_order)
+    prev_display = prev_display.sort_values(['Status_Sort', 'PLTD'])
     
-    st.dataframe(prev[cols_show], use_container_width=True, hide_index=True, height=400)
+    st.dataframe(prev_display[cols_show], use_container_width=True, hide_index=True, height=400)
     st.markdown("---")
     
     # ============================================================
@@ -673,20 +686,20 @@ def page_propose():
     warning_df = prev[prev['Status'] == '🟠 Warning']
     
     if not urgent_df.empty:
-        total_urgent = urgent_df['Propose_3_Bulan'].sum()
+        total_urgent = urgent_df['Propose_N_Bulan'].sum()
         st.error(f"🔴 **URGENT:** {len(urgent_df)} material perlu segera order! Total: **{total_urgent:,.0f} unit**")
-        rek_urgent = urgent_df[['PLTD', 'Nama Material', 'Qty', 'Keb_Aktual', 'Propose_3_Bulan']].copy()
-        rek_urgent.columns = ['PLTD', 'Material', 'Stok', 'Keb/Bulan', 'Usulan Order']
+        rek_urgent = urgent_df[['PLTD', 'Nama Material', 'Qty', 'Keb_Aktual', 'Propose_N_Bulan']].copy()
+        rek_urgent.columns = ['PLTD', 'Material', 'Stok', 'Keb/Bulan', f'Usulan Order ({jumlah_bulan} bln)']
         st.dataframe(rek_urgent, use_container_width=True, hide_index=True)
     
     if not warning_df.empty:
-        total_warning = warning_df['Propose_3_Bulan'].sum()
+        total_warning = warning_df['Propose_N_Bulan'].sum()
         st.warning(f"🟠 **WARNING:** {len(warning_df)} material perlu order. Total: **{total_warning:,.0f} unit**")
-        rek_warning = warning_df[['PLTD', 'Nama Material', 'Qty', 'Keb_Aktual', 'Propose_3_Bulan']].copy()
-        rek_warning.columns = ['PLTD', 'Material', 'Stok', 'Keb/Bulan', 'Usulan Order']
+        rek_warning = warning_df[['PLTD', 'Nama Material', 'Qty', 'Keb_Aktual', 'Propose_N_Bulan']].copy()
+        rek_warning.columns = ['PLTD', 'Material', 'Stok', 'Keb/Bulan', f'Usulan Order ({jumlah_bulan} bln)']
         st.dataframe(rek_warning, use_container_width=True, hide_index=True)
     
-    total_all = urgent_df['Propose_3_Bulan'].sum() + warning_df['Propose_3_Bulan'].sum()
+    total_all = urgent_df['Propose_N_Bulan'].sum() + warning_df['Propose_N_Bulan'].sum()
     st.info(f"📦 **Total usulan order (urgent + warning): {total_all:,.0f} unit**")
 
 def page_transaksi():
