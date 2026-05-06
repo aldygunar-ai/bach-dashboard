@@ -179,67 +179,91 @@ def load_all():
         res['cik'] = dc
     except: pass
 
-    # PEMAKAIAN (SHEET GABUNGAN)
+     # PEMAKAIAN (SHEET GABUNGAN)
     try:
         sh = cl.open_by_key(MASTER_GABUNGAN_ID)
         ws = sh.worksheet('Gabungan')
         data = ws.get_all_values()
+        
+        # DEBUG
+        st.write(f"DEBUG PEMAKAIAN: Total baris dari sheet = {len(data)}")
+        
         if len(data) >= 2:
             header_row = None
             for i, row in enumerate(data[:10]):
-                row_text = ' '.join([str(c).lower() for c in row])
+                row_text = ' '.join([str(c).lower() for c in row if c])
                 if 'tanggal' in row_text and 'nama' in row_text:
                     header_row = i
+                    st.write(f"DEBUG PEMAKAIAN: Header ditemukan di baris {i}")
                     break
+            
             if header_row is None:
                 header_row = 2
+                st.write(f"DEBUG PEMAKAIAN: Header TIDAK ditemukan, pakai default baris 2")
+            
             p_rows = []
+            skipped_empty = 0
+            skipped_no_material = 0
+            
             for r in data[header_row+1:]:
-                if len(r) < 2: continue
-                if not any(str(c).strip() for c in r[:5]): continue
+                if len(r) < 2:
+                    skipped_empty += 1
+                    continue
+                if not any(str(c).strip() for c in r[:5]):
+                    skipped_empty += 1
+                    continue
+                
+                nama_material = r[8].strip() if len(r) > 8 else ''
+                
+                if not nama_material:
+                    skipped_no_material += 1
+                    continue
+                
+                # ... (sisa kode parsing seperti biasa)
                 tanggal = r[0].strip() if len(r) > 0 else ''
                 masuk = r[1].strip() if len(r) > 1 else '0'
                 keluar = r[2].strip() if len(r) > 2 else '0'
                 stok = r[3].strip() if len(r) > 3 else '0'
                 keterangan = r[4].strip() if len(r) > 4 else ''
                 transaksi = r[7].strip() if len(r) > 7 else ''
-                nama_material = r[8].strip() if len(r) > 8 else ''
                 jobtype = r[9].strip() if len(r) > 9 else ''
                 gudang = r[11].strip() if len(r) > 11 else ''
                 harga_raw = r[14].strip() if len(r) > 14 else '0'
                 
-                if nama_material:
-                    try: m = float(masuk.replace(',','')) if masuk else 0.0
-                    except: m = 0.0
-                    try: k = float(keluar.replace(',','')) if keluar else 0.0
-                    except: k = 0.0
-                    try: s = float(stok.replace(',','')) if stok else 0.0
-                    except: s = 0.0
-                    
-                    try:
-                        if '.' in harga_raw and ',' not in harga_raw:
-                            h = float(harga_raw.replace('.', ''))
-                        elif ',' in harga_raw:
-                            h = float(harga_raw.replace(',', '.'))
-                        else:
-                            h = float(harga_raw)
-                    except:
-                        h = 0.0
-                    
-                    p_rows.append({
-                        'Tanggal': tanggal,
-                        'Nama Material': nama_material,
-                        'Masuk': m, 'Keluar': k, 'Stok': s,
-                        'Gudang': gudang, 'Keterangan': keterangan,
-                        'Transaksi': transaksi, 'JobType': jobtype,
-                        'HARGA_D365': h,
-                        'TOTAL_COST': k * h,
-                    })
+                try: m = float(masuk.replace(',','')) if masuk else 0.0
+                except: m = 0.0
+                try: k = float(keluar.replace(',','')) if keluar else 0.0
+                except: k = 0.0
+                try: s = float(stok.replace(',','')) if stok else 0.0
+                except: s = 0.0
+                try:
+                    if '.' in harga_raw and ',' not in harga_raw:
+                        h = float(harga_raw.replace('.', ''))
+                    elif ',' in harga_raw:
+                        h = float(harga_raw.replace(',', '.'))
+                    else:
+                        h = float(harga_raw)
+                except:
+                    h = 0.0
+                
+                p_rows.append({
+                    'Tanggal': tanggal, 'Nama Material': nama_material,
+                    'Masuk': m, 'Keluar': k, 'Stok': s,
+                    'Gudang': gudang, 'Keterangan': keterangan,
+                    'Transaksi': transaksi, 'JobType': jobtype,
+                    'HARGA_D365': h, 'TOTAL_COST': k * h,
+                })
+            
+            st.write(f"DEBUG PEMAKAIAN: Baris diproses = {len(p_rows)}, diskip (empty) = {skipped_empty}, diskip (no material) = {skipped_no_material}")
+            
             df_p = pd.DataFrame(p_rows)
             if not df_p.empty:
                 df_p['Tanggal'] = pd.to_datetime(df_p['Tanggal'], errors='coerce')
             res['pemakaian'] = df_p
-    except: pass
+        else:
+            st.write("DEBUG PEMAKAIAN: Data kurang dari 2 baris!")
+    except Exception as e:
+        st.write(f"DEBUG PEMAKAIAN ERROR: {e}")
         
     # DEBUG: Tampilkan jumlah data yang terbaca
     st.write(f"DEBUG load_all: pemakaian rows = {len(res['pemakaian'])}, stock rows = {len(res['stock'])}, cik rows = {len(res.get('cik', pd.DataFrame()))}")
