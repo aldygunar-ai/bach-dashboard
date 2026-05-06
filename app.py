@@ -356,6 +356,28 @@ def page_analisis():
     st.title("📊 Analisis Pemakaian Material")
     data = load_all()
     df_pakai = data.get('pemakaian', pd.DataFrame()).copy()
+
+        # ==== DEBUG: LIHAT DATA YANG HARGA_D365 = 0 ====
+    with st.expander("🔍 DEBUG: HARGA_D365 Check", expanded=True):
+        total_rows = len(df_pakai)
+        with_harga = len(df_pakai[df_pakai['HARGA_D365'] > 0])
+        without_harga = len(df_pakai[df_pakai['HARGA_D365'] == 0])
+        total_keluar_all = df_pakai['Keluar'].sum()
+        total_keluar_with_harga = df_pakai[df_pakai['HARGA_D365'] > 0]['Keluar'].sum()
+        total_keluar_without_harga = df_pakai[df_pakai['HARGA_D365'] == 0]['Keluar'].sum()
+        
+        st.write(f"**Total baris:** {total_rows}")
+        st.write(f"**Baris dengan HARGA_D365 > 0:** {with_harga}")
+        st.write(f"**Baris dengan HARGA_D365 = 0:** {without_harga}")
+        st.write(f"**Total Keluar (semua):** {total_keluar_all:,.0f}")
+        st.write(f"**Total Keluar (dengan HARGA_D365):** {total_keluar_with_harga:,.0f}")
+        st.write(f"**Total Keluar (tanpa HARGA_D365):** {total_keluar_without_harga:,.0f}")
+        
+        # Material dengan HARGA_D365 = 0
+        st.write("**Material dengan HARGA_D365 = 0:**")
+        zero_harga = df_pakai[df_pakai['HARGA_D365'] == 0]
+        if not zero_harga.empty:
+            st.dataframe(zero_harga.groupby('Nama Material').agg(Keluar=('Keluar','sum')).sort_values('Keluar', ascending=False).head(30), use_container_width=True)
     
     if df_pakai.empty:
         st.warning("Data pemakaian (sheet Gabungan) belum tersedia.")
