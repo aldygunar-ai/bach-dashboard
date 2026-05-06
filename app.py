@@ -512,7 +512,15 @@ def page_propose():
         'Kebutuhan Perbulan Sesuai CF PM': 'Keb_PM',
         'keb_aktual': 'Keb_Aktual'
     })
-    
+        # DEBUG: Lihat data M1 untuk satu material
+    with st.expander("🔍 Debug M1", expanded=True):
+        st.write("**Kolom M1:**", m1_use.columns.tolist())
+        st.write("**Sample M1 untuk Oli Shell di Bobong:**")
+        sample = m1_use[(m1_use['PLTD'] == 'BOBONG') & (m1_use['Kode Material'].str.contains('RIMULA', case=False, na=False))]
+        st.dataframe(sample, use_container_width=True)
+        st.write("**Semua kolom M1:**")
+        st.dataframe(m1.head(3), use_container_width=True)
+        
     cols_need = ['PLTD', 'Kode Material', 'Keb_PM', 'Keb_Aktual']
     m1_use = m1_use[[c for c in cols_need if c in m1_use.columns]]
     
