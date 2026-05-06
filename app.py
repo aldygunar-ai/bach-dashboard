@@ -504,7 +504,8 @@ def page_propose():
         st.warning("Data stok atau Master Data 1 tidak tersedia.")
         return
     
-    # Gabungkan stok dengan Master Data 1
+    # m1 sudah di-rename di load_all(): 'Nama PLTD' -> 'pltd', 'Kode Material' -> 'kode_material', dll
+    # Kita tinggal rename sisanya
     m1_use = m1.rename(columns={
         'Nama Material': 'Nama Material',
         'kode_material': 'Kode Material',
@@ -512,6 +513,11 @@ def page_propose():
         'Kebutuhan Perbulan Sesuai CF PM': 'Keb_PM',
         'keb_aktual': 'Keb_Aktual'
     })
+    # Jika 'PLTD' masih kosong, cari 'Nama PLTD'
+    if 'PLTD' not in m1_use.columns or m1_use['PLTD'].isna().all():
+        if 'Nama PLTD' in m1.columns:
+            m1_use['PLTD'] = m1['Nama PLTD']
+            
         # DEBUG: Lihat data M1 untuk satu material
     with st.expander("🔍 Debug M1", expanded=True):
         st.write("**Kolom M1:**", m1_use.columns.tolist())
