@@ -546,12 +546,10 @@ def page_propose():
         'Nama Material': 'Nama Material',
         'kode_material': 'Kode Material',
         'pltd': 'PLTD',
-        'Harga D365': 'Harga',
-        'Kebutuhan Perbulan Sesuai CF PM': 'Keb_PM',
         'keb_aktual': 'Keb_Aktual'
     })
     
-    cols_need = ['PLTD', 'Kode Material', 'Keb_PM', 'Keb_Aktual', 'Harga']
+    cols_need = ['PLTD', 'Kode Material', 'Keb_Aktual']
     m1_use = m1_use[[c for c in cols_need if c in m1_use.columns]]
     
     m1_use['PLTD'] = m1_use['PLTD'].astype(str).str.strip().str.upper()
@@ -561,7 +559,7 @@ def page_propose():
     
     propose = df_stock.merge(m1_use, on=['PLTD', 'Kode Material'], how='left')
     
-    for col in ['Qty', 'Keb_PM', 'Keb_Aktual', 'Harga']:
+    for col in ['Qty', 'Keb_Aktual']:
         if col in propose.columns:
             propose[col] = pd.to_numeric(propose[col], errors='coerce').fillna(0)
     
@@ -600,18 +598,21 @@ def page_propose():
     propose = propose[propose['Keb_Aktual'] > 0]
     
     # ============================================================
-    # FILTER (DEFAULT SELECT ALL)
+    # FILTER (DEFAULT KOSONG)
     # ============================================================
     st.sidebar.header("🎯 Filter Propose")
     
     pltd_opts = sorted(propose['PLTD'].unique())
-    sel_pltd = st.sidebar.multiselect("📍 PLTD", pltd_opts, default=pltd_opts)
+    sel_pltd = st.sidebar.multiselect("📍 PLTD", pltd_opts, default=[])
     
     status_opts = ['🔴 Urgent', '🟠 Warning', '🟡 Perlu Order', '🟢 Aman', '⚪ No Data']
-    sel_status = st.sidebar.multiselect("📊 Status", status_opts, default=['🔴 Urgent', '🟠 Warning', '🟡 Perlu Order'])
+    sel_status = st.sidebar.multiselect("📊 Status", status_opts, default=[])
     
-    jenis_opts = ['Preventive', 'Corrective']
-    sel_jenis = st.sidebar.multiselect("⚙️ Jenis Material", jenis_opts, default=['Preventive'])
+    if 'Jenis' in propose.columns:
+        jenis_opts = ['Preventive', 'Corrective']
+        sel_jenis = st.sidebar.multiselect("⚙️ Jenis Material", jenis_opts, default=[])
+    else:
+        sel_jenis = []
     
     f = propose.copy()
     if sel_pltd: f = f[f['PLTD'].isin(sel_pltd)]
@@ -637,14 +638,16 @@ def page_propose():
     st.markdown("---")
     
     # ============================================================
-    # TABEL PROPOSE (TANPA STYLING RUMIT)
+    # TABEL PROPOSE
     # ============================================================
     st.subheader("📋 Detail Propose Order per Material")
     
-    cols_show = ['PLTD', 'Kode Material', 'Nama Material', 'Jenis', 'Qty', 'Keb_Aktual', 'Sisa_Bulan', 'Sisa_Hari', 'Keb_3_Bulan', 'Propose_3_Bulan', 'Status']
+    cols_show = ['PLTD', 'Kode Material', 'Nama Material', 'Qty', 'Keb_Aktual', 'Sisa_Bulan', 'Sisa_Hari', 'Keb_3_Bulan', 'Propose_3_Bulan', 'Status']
+    if 'Jenis' in f.columns:
+        cols_show.insert(3, 'Jenis')
     cols_show = [c for c in cols_show if c in f.columns]
     
-    f_display = f[cols_show].sort_values('Status')
+    f_display = f[cols_show].sort_values(['Status', 'PLTD'])
     st.dataframe(f_display, use_container_width=True, hide_index=True, height=500)
     
     st.markdown("---")
@@ -656,7 +659,8 @@ def page_propose():
     
     urgent_df = f[f['Status'] == '🔴 Urgent']
     if not urgent_df.empty:
-        for _, row in urgent_df.head(10).iterrows():
+        st.markdown("### 🔴 Urgent - Harus Segera Order")
+        for _, row in urgent_df.iterrows():
             st.error(
                 f"**{row['Nama Material']}** di **{row['PLTD']}**: "
                 f"Hanya {row['Qty']:,.0f} unit (cukup {row['Sisa_Hari']:.0f} hari), "
@@ -666,8 +670,20 @@ def page_propose():
     
     warning_df = f[f['Status'] == '🟠 Warning']
     if not warning_df.empty:
-        for _, row in warning_df.head(5).iterrows():
+        st.markdown("### 🟠 Warning - Perlu Order Dalam Waktu Dekat")
+        for _, row in warning_df.iterrows():
             st.warning(
+                f"**{row['Nama Material']}** di **{row['PLTD']}**: "
+                f"Stok {row['Qty']:,.0f} unit (cukup {row['Sisa_Hari']:.0f} hari), "
+                f"belum mencukupi kebutuhan 3 bulan ({row['Keb_3_Bulan']:,.0f} unit). "
+                f"**Perlu order {row['Propose_3_Bulan']:,.0f} unit.**"
+            )
+    
+    perlu_df = f[f['Status'] == '🟡 Perlu Order']
+    if not perlu_df.empty and len(perlu_df) <= 10:
+        st.markdown("### 🟡 Perlu Order - Untuk 3 Bulan Ke Depan")
+        for _, row in perlu_df.iterrows():
+            st.info(
                 f"**{row['Nama Material']}** di **{row['PLTD']}**: "
                 f"Stok {row['Qty']:,.0f} unit (cukup {row['Sisa_Hari']:.0f} hari), "
                 f"belum mencukupi kebutuhan 3 bulan ({row['Keb_3_Bulan']:,.0f} unit). "
