@@ -344,54 +344,81 @@ def page_analisis():
     st.title("📊 Analisis Pemakaian Material")
     data = load_all()
     df_pakai = data.get('pemakaian', pd.DataFrame()).copy()
-    if df_pakai.empty: st.warning("Data pemakaian belum tersedia."); return
-
+    
+    if df_pakai.empty:
+        st.warning("Data pemakaian (sheet Gabungan) belum tersedia.")
+        return
+    
+    # Normalisasi nama
     nama_map = {
         'water coollant reco-cool - drum': 'WATER COOLLANT RECO-COOL',
+        'water coollant reco-cool multiroad-drum': 'WATER COOLLANT RECO-COOL',
         'filter udara af872': 'FILTER UDARA AF872',
         'air filter element af872': 'FILTER UDARA AF872',
+        'filter udara af 25278': 'FILTER UDARA AF25278',
+        'gasket cylinder head 3629140': 'GASKET CYLINDER HEAD',
         'element racor 2020pm parker': 'ELEMENT RACOR 2020PM',
+        'element racor 2020pm fleetguard': 'ELEMENT RACOR 2020PM',
         'oil filter lf777 fleet gruad': 'OIL FILTER LF777',
         'coolant filter wf2076 fleetguard': 'COOLANT FILTER WF2076',
         'oil shell rimula r3mv 15w-40 (drum @ 209 ltr)': 'OIL SHELL RIMULA R3MV',
         'oli rimula r4 x 15w-40 (ibc @ 1000 liter)': 'OLI RIMULA R4 (IBC)',
         'filter separator fs 1006 fleetguard': 'FILTER SEPARATOR FS1006',
         'oil filter lf3325 fleetguard': 'OIL FILTER LF3325',
+        'element air filter aho1135': 'ELEMENT AIR FILTER AHO1135',
     }
     df_pakai['Nama Material'] = df_pakai['Nama Material'].str.strip().str.lower()
     df_pakai['Nama Material'] = df_pakai['Nama Material'].apply(lambda x: nama_map.get(x, x.upper()))
-
-    for col in ['Masuk','Keluar','Stok','TOTAL_COST']:
-        if col in df_pakai.columns: df_pakai[col] = pd.to_numeric(df_pakai[col], errors='coerce').fillna(0)
-
+    
+    # Numerik
+    for col in ['Masuk', 'Keluar', 'Stok', 'TOTAL_COST']:
+        if col in df_pakai.columns:
+            df_pakai[col] = pd.to_numeric(df_pakai[col], errors='coerce').fillna(0)
+    
+    # Tanggal (TANPA dropna)
     if 'Tanggal' in df_pakai.columns:
         df_pakai['Tanggal'] = pd.to_datetime(df_pakai['Tanggal'], errors='coerce')
-        df_pakai = df_pakai.dropna(subset=['Tanggal'])
-        df_pakai['Tahun'] = df_pakai['Tanggal'].dt.year.astype(int).astype(str)
-        bulan_map = {1:'Jan',2:'Feb',3:'Mar',4:'Apr',5:'Mei',6:'Jun',7:'Jul',8:'Ags',9:'Sep',10:'Okt',11:'Nov',12:'Des'}
-        df_pakai['Periode'] = df_pakai['Tanggal'].dt.month.map(bulan_map)
-        df_pakai['BulanStr'] = df_pakai['Tanggal'].dt.strftime('%Y-%m')
-
-    st.sidebar.header("Filter Analisis")
+        df_pakai['Tahun'] = df_pakai['Tanggal'].dt.year.astype('Int64').astype(str).replace('<NA>', '')
+        bulan_map = {1:'Jan',2:'Feb',3:'Mar',4:'Apr',5:'Mei',6:'Jun',
+                     7:'Jul',8:'Ags',9:'Sep',10:'Okt',11:'Nov',12:'Des'}
+        df_pakai['Periode'] = df_pakai['Tanggal'].dt.month.map(bulan_map).fillna('')
+        df_pakai['BulanStr'] = df_pakai['Tanggal'].dt.strftime('%Y-%m').replace('NaT', '')
+    
+    # Filter sidebar
+    st.sidebar.header("🎯 Filter Analisis")
+    
     nama_opts = sorted(df_pakai['Nama Material'].unique().astype(str))
-    sel_nama = st.sidebar.multiselect("Nama Material", nama_opts, default=[])
-    gudang_opts = sorted(df_pakai['Gudang'].unique().astype(str)) if 'Gudang' in df_pakai.columns else []
-    sel_gudang = st.sidebar.multiselect("Gudang", gudang_opts, default=[])
-    tahun_opts = sorted(df_pakai['Tahun'].astype(str).unique())
-    sel_tahun = st.sidebar.multiselect("Tahun", tahun_opts, default=[])
+    sel_nama = st.sidebar.multiselect("📦 Nama Material", nama_opts, default=[])
+    
+    gudang_opts = sorted(df_pakai['Gudang'].dropna().unique().astype(str)) if 'Gudang' in df_pakai.columns else []
+    sel_gudang = st.sidebar.multiselect("🏢 Gudang", gudang_opts, default=[])
+    
+    jobtype_opts = sorted(df_pakai['JobType'].dropna().unique().astype(str)) if 'JobType' in df_pakai.columns else []
+    sel_jobtype = st.sidebar.multiselect("📋 JobType", jobtype_opts, default=[])
+    
+    if 'Tahun' in df_pakai.columns:
+        tahun_opts = sorted([str(t) for t in df_pakai['Tahun'].unique() if pd.notna(t) and str(t) not in ['', '<NA>', 'None', 'nan']])
+    else:
+        tahun_opts = []
+    sel_tahun = st.sidebar.multiselect("📅 Tahun", tahun_opts, default=[])
+    
     periode_opts = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Ags','Sep','Okt','Nov','Des']
-    sel_periode = st.sidebar.multiselect("Bulan", periode_opts, default=[])
-
+    sel_periode = st.sidebar.multiselect("🗓️ Bulan", periode_opts, default=[])
+    
+    # Filter data
     f = df_pakai.copy()
     if sel_nama: f = f[f['Nama Material'].astype(str).isin(sel_nama)]
     if sel_gudang: f = f[f['Gudang'].astype(str).isin(sel_gudang)]
+    if sel_jobtype: f = f[f['JobType'].astype(str).isin(sel_jobtype)]
     if sel_tahun: f = f[f['Tahun'].astype(str).isin(sel_tahun)]
     if sel_periode: f = f[f['Periode'].astype(str).isin(sel_periode)]
-
+    
+    # Pivot Cost
     pivot_cost = f.pivot_table(index='Nama Material', values=['Keluar','TOTAL_COST'], aggfunc={'Keluar':'sum','TOTAL_COST':'sum'})
     pivot_cost = pivot_cost[pivot_cost['TOTAL_COST'] > 0]
     grand_total_cost = pivot_cost['TOTAL_COST'].sum()
-
+    
+    # KPI
     st.subheader("📈 Ringkasan Pemakaian")
     k1,k2,k3,k4 = st.columns(4)
     k1.metric("Total Transaksi", len(f))
@@ -399,9 +426,10 @@ def page_analisis():
     k3.metric("Material Unik", len(pivot_cost))
     k4.metric("💰 Grand Total Cost", f"Rp {grand_total_cost:,.0f}")
     st.markdown("---")
-
+    
+    # TREN
     st.subheader("📈 Tren Pemakaian Material")
-    trend = f.groupby('BulanStr').agg(Masuk=('Masuk','sum'), Keluar=('Keluar','sum')).reset_index().sort_values('BulanStr')
+    trend = f[f['BulanStr'] != ''].groupby('BulanStr').agg(Masuk=('Masuk','sum'), Keluar=('Keluar','sum')).reset_index().sort_values('BulanStr')
     if not trend.empty:
         fig1 = go.Figure()
         fig1.add_trace(go.Scatter(x=trend['BulanStr'], y=trend['Masuk'], mode='lines+markers+text', name='Inbound',
@@ -414,7 +442,8 @@ def page_analisis():
                           legend=dict(orientation='h', yanchor='bottom', y=-0.25, xanchor='center', x=0.5), xaxis=dict(tickangle=-45))
         st.plotly_chart(fig1, use_container_width=True)
     st.markdown("---")
-
+    
+    # TOP 10 COST
     st.subheader("💰 TOP 10 Cost Material")
     top_cost = pivot_cost.nlargest(10, 'TOTAL_COST').sort_values('TOTAL_COST', ascending=True)
     if not top_cost.empty:
@@ -424,7 +453,8 @@ def page_analisis():
         fig2.update_layout(height=400, margin=dict(l=250, r=100, t=30, b=20))
         st.plotly_chart(fig2, use_container_width=True)
     st.markdown("---")
-
+    
+    # TOP 10 INBOUND VS OUTBOUND
     st.subheader("📥📤 TOP 10 Material: Inbound vs Outbound")
     top_10 = f.groupby('Nama Material').agg(Masuk=('Masuk','sum'), Keluar=('Keluar','sum')).sum(axis=1).nlargest(10).index.tolist()
     agg = f[f['Nama Material'].isin(top_10)].groupby('Nama Material').agg(Masuk=('Masuk','sum'), Keluar=('Keluar','sum')).reset_index().sort_values('Masuk', ascending=True)
@@ -438,7 +468,24 @@ def page_analisis():
                           legend=dict(orientation='h', yanchor='bottom', y=-0.25, xanchor='center', x=0.5))
         st.plotly_chart(fig3, use_container_width=True)
     st.markdown("---")
-
+    
+    # TOP 10 GUDANG
+    if 'Gudang' in f.columns:
+        st.subheader("🏢 TOP 10 Gudang")
+        top_gudang = f.groupby('Gudang').agg(Keluar=('Keluar','sum'), Masuk=('Masuk','sum')).sum(axis=1).nlargest(10).index.tolist()
+        agg_g = f[f['Gudang'].isin(top_gudang)].groupby('Gudang').agg(Masuk=('Masuk','sum'), Keluar=('Keluar','sum')).reset_index().sort_values('Masuk', ascending=True)
+        if not agg_g.empty:
+            fig4 = go.Figure()
+            fig4.add_trace(go.Bar(y=agg_g['Gudang'], x=agg_g['Masuk'], name='Inbound', orientation='h', marker=dict(color='#4B8BBE'),
+                                  text=agg_g['Masuk'].apply(lambda x: f'{x:,.0f}'), textposition='outside'))
+            fig4.add_trace(go.Bar(y=agg_g['Gudang'], x=agg_g['Keluar'], name='Outbound', orientation='h', marker=dict(color='#E67E22'),
+                                  text=agg_g['Keluar'].apply(lambda x: f'{x:,.0f}'), textposition='outside'))
+            fig4.update_layout(barmode='group', height=350, margin=dict(l=120, r=80, t=30, b=60),
+                              legend=dict(orientation='h', yanchor='bottom', y=-0.25, xanchor='center', x=0.5))
+            st.plotly_chart(fig4, use_container_width=True)
+    st.markdown("---")
+    
+    # TABEL DETAIL
     st.subheader("📋 Detail Pemakaian Material")
     cols = ['Tanggal','Nama Material','Masuk','Keluar','Stok','Gudang','Keterangan','Transaksi','JobType','TOTAL_COST']
     cols = [c for c in cols if c in f.columns]
@@ -447,6 +494,8 @@ def page_analisis():
 
 def page_propose():
     st.title("📦 Propose Order Material")
+    st.markdown("*Analisis stok vs kebutuhan untuk perencanaan pengadaan*")
+    
     data = load_all()
     df_stock = data.get('stock', pd.DataFrame()).copy()
     m1 = data.get('m1')
@@ -455,6 +504,7 @@ def page_propose():
         st.warning("Data stok atau Master Data 1 tidak tersedia.")
         return
     
+    # Gabungkan stok dengan Master Data 1
     m1_use = m1.rename(columns={
         'Nama Material': 'Nama Material',
         'kode_material': 'Kode Material',
@@ -465,70 +515,160 @@ def page_propose():
     
     cols_need = ['PLTD', 'Kode Material', 'Keb_PM', 'Keb_Aktual']
     m1_use = m1_use[[c for c in cols_need if c in m1_use.columns]]
+    
     m1_use['PLTD'] = m1_use['PLTD'].astype(str).str.strip().str.upper()
     m1_use['Kode Material'] = m1_use['Kode Material'].astype(str).str.strip().str.upper()
     df_stock['PLTD'] = df_stock['PLTD'].astype(str).str.strip().str.upper()
     df_stock['Kode Material'] = df_stock['Kode Material'].astype(str).str.strip().str.upper()
     
     propose = df_stock.merge(m1_use, on=['PLTD', 'Kode Material'], how='left')
-    for col in ['Qty', 'Keb_PM', 'Keb_Aktual']:
-        if col in propose.columns: propose[col] = pd.to_numeric(propose[col], errors='coerce').fillna(0)
     
+    for col in ['Qty', 'Keb_PM', 'Keb_Aktual']:
+        if col in propose.columns:
+            propose[col] = pd.to_numeric(propose[col], errors='coerce').fillna(0)
+    
+    # Filter hanya Preventive
     propose = propose[propose['Jenis'] == 'Preventive']
-    propose['Sisa_Bulan'] = np.where(propose['Keb_Aktual'] > 0, np.floor(propose['Qty'] / propose['Keb_Aktual'] * 10) / 10, 0)
+    
+    # Hitung
+    propose['Sisa_Bulan'] = np.where(
+        propose['Keb_Aktual'] > 0,
+        np.floor(propose['Qty'] / propose['Keb_Aktual'] * 10) / 10,
+        0
+    )
     propose['Keb_3_Bulan'] = propose['Keb_Aktual'] * 3
     propose['Propose_3_Bulan'] = np.ceil(np.maximum(0, propose['Keb_3_Bulan'] - propose['Qty']))
     
     def get_status(row):
-        if row['Keb_Aktual'] <= 0: return '⚪ No Data'
-        if row['Qty'] >= row['Keb_3_Bulan']: return '🟢 Aman'
-        elif row['Sisa_Bulan'] < 1: return '🔴 Urgent'
-        elif row['Sisa_Bulan'] < 2: return '🟠 Warning'
-        else: return '🟡 Perlu Order'
+        if row['Keb_Aktual'] <= 0:
+            return '⚪ No Data'
+        if row['Qty'] >= row['Keb_3_Bulan']:
+            return '🟢 Aman'
+        elif row['Sisa_Bulan'] < 1:
+            return '🔴 Urgent'
+        elif row['Sisa_Bulan'] < 2:
+            return '🟠 Warning'
+        else:
+            return '🟡 Perlu Order'
+    
     propose['Status'] = propose.apply(get_status, axis=1)
     
     prev = propose[propose['Keb_Aktual'] > 0].copy()
     
+    # ============================================================
+    # FILTER (DEFAULT KOSONG)
+    # ============================================================
+    st.sidebar.header("🎯 Filter Propose")
+    
+    pltd_opts = sorted(prev['PLTD'].unique())
+    sel_pltd = st.sidebar.multiselect("📍 PLTD", pltd_opts, default=[])
+    
+    status_opts = ['🔴 Urgent', '🟠 Warning', '🟡 Perlu Order', '🟢 Aman', '⚪ No Data']
+    sel_status = st.sidebar.multiselect("📊 Status", status_opts, default=[])
+    
+    if sel_pltd:
+        prev = prev[prev['PLTD'].isin(sel_pltd)]
+    if sel_status:
+        prev = prev[prev['Status'].isin(sel_status)]
+    
+    # ============================================================
+    # 1. SISA STOK PREVENTIVE DALAM BULAN
+    # ============================================================
     st.subheader("⏳ Sisa Stok Preventive dalam Bulan")
-    sp = prev.pivot_table(index=['Kode Material','Nama Material'], columns='PLTD', values='Sisa_Bulan', aggfunc='first', fill_value=0.0)
+    
+    sp = prev.pivot_table(
+        index=['Kode Material', 'Nama Material'],
+        columns='PLTD',
+        values='Sisa_Bulan',
+        aggfunc='first',
+        fill_value=0.0
+    )
     sp = sp.reset_index()
-    pltd_cols_s = [c for c in sp.columns if c not in ('Kode Material','Nama Material')]
-    sp = sp[['Kode Material','Nama Material'] + pltd_cols_s]
-    cfg_s = {'Kode Material': st.column_config.TextColumn(pinned=True), 'Nama Material': st.column_config.TextColumn(pinned=True)}
-    for col in pltd_cols_s: cfg_s[col] = st.column_config.NumberColumn(format="%.1f")
+    pltd_cols_s = [c for c in sp.columns if c not in ('Kode Material', 'Nama Material')]
+    sp = sp[['Kode Material', 'Nama Material'] + pltd_cols_s]
+    
+    cfg_s = {
+        'Kode Material': st.column_config.TextColumn(pinned=True),
+        'Nama Material': st.column_config.TextColumn(pinned=True),
+    }
+    for col in pltd_cols_s:
+        cfg_s[col] = st.column_config.NumberColumn(format="%.1f")
+    
     def hl(val):
-        if isinstance(val, (int, float)) and val <= 1.5: return 'background-color: #ffcccc; color: #cc0000; font-weight: bold;'
+        if isinstance(val, (int, float)) and val <= 1.5:
+            return 'background-color: #ffcccc; color: #cc0000; font-weight: bold;'
         return ''
+    
     styled_sp = sp.style.map(hl, subset=pltd_cols_s)
     st.dataframe(styled_sp, column_config=cfg_s, use_container_width=True, hide_index=True)
     st.markdown("---")
     
+    # ============================================================
+    # 2. KEBUTUHAN PER BULAN SESUAI PM
+    # ============================================================
     st.subheader("📋 Kebutuhan Per Bulan Sesuai PM")
-    pm_pivot = prev.pivot_table(index=['Kode Material','Nama Material'], columns='PLTD', values='Keb_PM', aggfunc='first', fill_value=0)
-    pm_pivot = pm_pivot.round(0).astype(int).reset_index()
-    pm_pivot = pm_pivot[['Kode Material','Nama Material'] + pltd_cols_s]
-    cfg_pm = {'Kode Material': st.column_config.TextColumn(pinned=True), 'Nama Material': st.column_config.TextColumn(pinned=True)}
+    
+    pm_pivot = prev.pivot_table(
+        index=['Kode Material', 'Nama Material'],
+        columns='PLTD',
+        values='Keb_PM',
+        aggfunc='first',
+        fill_value=0
+    )
+    pm_pivot = pm_pivot.round(0).astype(int)
+    pm_pivot = pm_pivot.reset_index()
+    pm_pivot = pm_pivot[['Kode Material', 'Nama Material'] + pltd_cols_s]
+    
+    cfg_pm = {
+        'Kode Material': st.column_config.TextColumn(pinned=True),
+        'Nama Material': st.column_config.TextColumn(pinned=True),
+    }
     st.dataframe(pm_pivot, column_config=cfg_pm, use_container_width=True, hide_index=True)
     st.markdown("---")
     
+    # ============================================================
+    # 3. KEBUTUHAN PER BULAN SESUAI CF AKTUAL
+    # ============================================================
     st.subheader("📋 Kebutuhan Per Bulan Sesuai CF Aktual")
-    cf_pivot = prev.pivot_table(index=['Kode Material','Nama Material'], columns='PLTD', values='Keb_Aktual', aggfunc='first', fill_value=0)
-    cf_pivot = cf_pivot.round(0).astype(int).reset_index()
-    cf_pivot = cf_pivot[['Kode Material','Nama Material'] + pltd_cols_s]
-    cfg_cf = {'Kode Material': st.column_config.TextColumn(pinned=True), 'Nama Material': st.column_config.TextColumn(pinned=True)}
+    
+    cf_pivot = prev.pivot_table(
+        index=['Kode Material', 'Nama Material'],
+        columns='PLTD',
+        values='Keb_Aktual',
+        aggfunc='first',
+        fill_value=0
+    )
+    cf_pivot = cf_pivot.round(0).astype(int)
+    cf_pivot = cf_pivot.reset_index()
+    cf_pivot = cf_pivot[['Kode Material', 'Nama Material'] + pltd_cols_s]
+    
+    cfg_cf = {
+        'Kode Material': st.column_config.TextColumn(pinned=True),
+        'Nama Material': st.column_config.TextColumn(pinned=True),
+    }
     st.dataframe(cf_pivot, column_config=cfg_cf, use_container_width=True, hide_index=True)
     st.markdown("---")
     
+    # ============================================================
+    # 4. DETAIL PROPOSE ORDER
+    # ============================================================
     st.subheader("📋 Detail Propose Order per Material")
+    
     cols_show = ['PLTD', 'Kode Material', 'Nama Material', 'Qty', 'Keb_Aktual', 'Sisa_Bulan', 'Keb_3_Bulan', 'Propose_3_Bulan', 'Status']
     cols_show = [c for c in cols_show if c in prev.columns]
+    
     status_order = {'🔴 Urgent': 0, '🟠 Warning': 1, '🟡 Perlu Order': 2, '🟢 Aman': 3}
     prev['Status_Sort'] = prev['Status'].map(status_order)
     prev = prev.sort_values(['Status_Sort', 'PLTD'])
+    
     st.dataframe(prev[cols_show], use_container_width=True, hide_index=True, height=400)
     st.markdown("---")
     
+    # ============================================================
+    # 5. REKOMENDASI ORDER
+    # ============================================================
     st.subheader("📝 Rekomendasi Order")
+    
     urgent_df = prev[prev['Status'] == '🔴 Urgent']
     warning_df = prev[prev['Status'] == '🟠 Warning']
     
