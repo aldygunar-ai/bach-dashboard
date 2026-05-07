@@ -455,9 +455,24 @@ def page_propose():
     df_stock['Kode Material'] = df_stock['Kode Material'].astype(str).str.strip().str.upper()
     
     propose = df_stock.merge(m1_use, on=['PLTD', 'Kode Material'], how='left')
-    for col in ['Qty', 'Keb_PM', 'Keb_Aktual']:
-        if col in propose.columns: propose[col] = pd.to_numeric(propose[col], errors='coerce').fillna(0)
     
+    for col in ['Keb_PM', 'Keb_Aktual']:
+        if col in propose.columns:
+            propose[col] = propose[col].fillna(0)
+        with st.expander("🔍 Debug Merge", expanded=True):
+        # Cek Krueng Raya
+        kr_stok = df_stock[df_stock['PLTD'] == 'KRUENG RAYA']
+        kr_m1 = m1_use[m1_use['PLTD'] == 'KRUENG RAYA']
+        kr_merge = propose[propose['PLTD'] == 'KRUENG RAYA']
+        
+        st.write(f"**KRUENG RAYA:** Stok={len(kr_stok)}, M1={len(kr_m1)}, Merge={len(kr_merge)}")
+        st.write("**Sample Krueng Raya setelah merge:**")
+        st.dataframe(kr_merge[['PLTD','Kode Material','Nama Material','Qty','Keb_Aktual']].head(5), use_container_width=True)
+        
+        # Cek Air Anyir
+        aa_merge = propose[propose['PLTD'] == 'AIR ANYIR']
+        st.write(f"**AIR ANYIR:** Merge={len(aa_merge)}")
+        
     propose = propose[propose['Jenis'] == 'Preventive']
     
     st.sidebar.header("🎯 Filter Propose")
