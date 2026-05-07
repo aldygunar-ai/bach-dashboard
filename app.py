@@ -478,6 +478,21 @@ def page_propose():
     prev['Status'] = prev.apply(get_status, axis=1)
     prev = prev[prev['Keb_Aktual'] > 0]
     if sel_status: prev = prev[prev['Status'].isin(sel_status)]
+            # DEBUG: LIHAT PLTD YANG ADA
+    with st.expander("🔍 DEBUG PLTD", expanded=True):
+        st.write("**PLTD di Stok:**", sorted(df_stock['PLTD'].unique()))
+        st.write("**PLTD di M1:**", sorted(m1_use['PLTD'].unique()))
+        st.write("**PLTD di Propose (sebelum filter):**", sorted(propose['PLTD'].unique()))
+        st.write("**PLTD di Prev (setelah filter Keb_Aktual > 0):**", sorted(prev['PLTD'].unique()))
+        
+        # Cek PLTD yang Anda sebutkan
+        target = ['KRUENG RAYA', 'AIR ANYIR', 'PADANG MANGGAR', 'MERAWANG', 'WAENA']
+        for p in target:
+            s = p in df_stock['PLTD'].values
+            m = p in m1_use['PLTD'].values
+            pr = p in propose['PLTD'].values
+            pv = p in prev['PLTD'].values
+            st.write(f"- **{p}**: Stok={s}, M1={m}, Propose={pr}, Prev={pv}")
     
     # 1. Sisa Stok
     st.subheader("⏳ Sisa Stok Preventive dalam Bulan")
