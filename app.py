@@ -346,9 +346,8 @@ def page_analisis():
     df_pakai['Nama Material'] = df_pakai['Nama Material'].apply(lambda x: nama_map.get(x, x.upper()))
     for col in ['Masuk','Keluar','Stok','TOTAL_COST']:
         if col in df_pakai.columns: df_pakai[col] = pd.to_numeric(df_pakai[col], errors='coerce').fillna(0)
-       if 'Tanggal' in df_pakai.columns:
+    if 'Tanggal' in df_pakai.columns:
         df_pakai['Tanggal'] = pd.to_datetime(df_pakai['Tanggal'], errors='coerce')
-        # JANGAN dropna — biarkan yang tanpa tanggal tetap ada
         df_pakai['Tahun'] = df_pakai['Tanggal'].dt.year.astype('Int64').astype(str).replace('<NA>', '')
         bulan_map = {1:'Jan',2:'Feb',3:'Mar',4:'Apr',5:'Mei',6:'Jun',7:'Jul',8:'Ags',9:'Sep',10:'Okt',11:'Nov',12:'Des'}
         df_pakai['Periode'] = df_pakai['Tanggal'].dt.month.map(bulan_map).fillna('')
@@ -359,7 +358,9 @@ def page_analisis():
     sel_nama = st.sidebar.multiselect("Nama Material", nama_opts, default=[])
     gudang_opts = sorted(df_pakai['Gudang'].unique().astype(str)) if 'Gudang' in df_pakai.columns else []
     sel_gudang = st.sidebar.multiselect("Gudang", gudang_opts, default=[])
-    tahun_opts = sorted(df_pakai['Tahun'].astype(str).unique())
+    if 'Tahun' in df_pakai.columns:
+        tahun_opts = sorted([str(t) for t in df_pakai['Tahun'].unique() if pd.notna(t) and str(t) not in ['', '<NA>', 'None', 'nan']])
+    else: tahun_opts = []
     sel_tahun = st.sidebar.multiselect("Tahun", tahun_opts, default=[])
     periode_opts = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Ags','Sep','Okt','Nov','Des']
     sel_periode = st.sidebar.multiselect("Bulan", periode_opts, default=[])
@@ -383,7 +384,7 @@ def page_analisis():
     st.markdown("---")
 
     st.subheader("📈 Tren Pemakaian Material")
-    trend = f.groupby('BulanStr').agg(Masuk=('Masuk','sum'), Keluar=('Keluar','sum')).reset_index().sort_values('BulanStr')
+    trend = f[f['BulanStr'] != ''].groupby('BulanStr').agg(Masuk=('Masuk','sum'), Keluar=('Keluar','sum')).reset_index().sort_values('BulanStr')
     if not trend.empty:
         fig1 = go.Figure()
         fig1.add_trace(go.Scatter(x=trend['BulanStr'], y=trend['Masuk'], mode='lines+markers+text', name='Inbound',
