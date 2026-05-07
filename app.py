@@ -346,10 +346,13 @@ def page_analisis():
     df_pakai['Nama Material'] = df_pakai['Nama Material'].apply(lambda x: nama_map.get(x, x.upper()))
     for col in ['Masuk','Keluar','Stok','TOTAL_COST']:
         if col in df_pakai.columns: df_pakai[col] = pd.to_numeric(df_pakai[col], errors='coerce').fillna(0)
-    if 'Tanggal' in df_pakai.columns:
+       if 'Tanggal' in df_pakai.columns:
         df_pakai['Tanggal'] = pd.to_datetime(df_pakai['Tanggal'], errors='coerce')
-        df_pakai = df_pakai.dropna(subset=['Tanggal'])
-        df_pakai['Tahun'] = df_pakai['Tanggal'].dt.year.astype(int).astype(str)
+        # JANGAN dropna — biarkan yang tanpa tanggal tetap ada
+        df_pakai['Tahun'] = df_pakai['Tanggal'].dt.year.astype('Int64').astype(str).replace('<NA>', '')
+        bulan_map = {1:'Jan',2:'Feb',3:'Mar',4:'Apr',5:'Mei',6:'Jun',7:'Jul',8:'Ags',9:'Sep',10:'Okt',11:'Nov',12:'Des'}
+        df_pakai['Periode'] = df_pakai['Tanggal'].dt.month.map(bulan_map).fillna('')
+        df_pakai['BulanStr'] = df_pakai['Tanggal'].dt.strftime('%Y-%m').replace('NaT', '')
         bulan_map = {1:'Jan',2:'Feb',3:'Mar',4:'Apr',5:'Mei',6:'Jun',7:'Jul',8:'Ags',9:'Sep',10:'Okt',11:'Nov',12:'Des'}
         df_pakai['Periode'] = df_pakai['Tanggal'].dt.month.map(bulan_map)
         df_pakai['BulanStr'] = df_pakai['Tanggal'].dt.strftime('%Y-%m')
