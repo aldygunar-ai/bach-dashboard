@@ -223,13 +223,19 @@ def load_all():
             df_p = pd.DataFrame(p_rows)
             if not df_p.empty: df_p['Tanggal'] = pd.to_datetime(df_p['Tanggal'], errors='coerce')
             res['pemakaian'] = df_p
-    except: pass
+    except Exception as e:
+        st.error(f"❌ Gagal baca sheet Gabungan: {e}")
 
     return res
 
 def home():
     st.title("⚡ Dashboard Stok & Logistik PLTD")
     data = load_all()
+    
+    # DEBUG
+    st.write(f"Stock: {len(data.get('stock', pd.DataFrame()))} rows")
+    st.write(f"Pemakaian: {len(data.get('pemakaian', pd.DataFrame()))} rows")
+    st.write(f"Cikande: {len(data.get('cik', pd.DataFrame()))} rows")
     df = data.get('stock', pd.DataFrame())
     if df.empty: st.warning("Data belum tersedia."); return
     c1,c2,c3 = st.columns(3)
