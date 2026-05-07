@@ -223,19 +223,13 @@ def load_all():
             df_p = pd.DataFrame(p_rows)
             if not df_p.empty: df_p['Tanggal'] = pd.to_datetime(df_p['Tanggal'], errors='coerce')
             res['pemakaian'] = df_p
-    except Exception as e:
-        st.error(f"❌ Gagal baca sheet Gabungan: {e}")
+    except: pass
 
     return res
 
 def home():
     st.title("⚡ Dashboard Stok & Logistik PLTD")
     data = load_all()
-    
-    # DEBUG
-    st.write(f"Stock: {len(data.get('stock', pd.DataFrame()))} rows")
-    st.write(f"Pemakaian: {len(data.get('pemakaian', pd.DataFrame()))} rows")
-    st.write(f"Cikande: {len(data.get('cik', pd.DataFrame()))} rows")
     df = data.get('stock', pd.DataFrame())
     if df.empty: st.warning("Data belum tersedia."); return
     c1,c2,c3 = st.columns(3)
@@ -354,6 +348,7 @@ def page_analisis():
         if col in df_pakai.columns: df_pakai[col] = pd.to_numeric(df_pakai[col], errors='coerce').fillna(0)
     if 'Tanggal' in df_pakai.columns:
         df_pakai['Tanggal'] = pd.to_datetime(df_pakai['Tanggal'], errors='coerce')
+        # TANPA dropna
         df_pakai['Tahun'] = df_pakai['Tanggal'].dt.year.astype('Int64').astype(str).replace('<NA>', '')
         bulan_map = {1:'Jan',2:'Feb',3:'Mar',4:'Apr',5:'Mei',6:'Jun',7:'Jul',8:'Ags',9:'Sep',10:'Okt',11:'Nov',12:'Des'}
         df_pakai['Periode'] = df_pakai['Tanggal'].dt.month.map(bulan_map).fillna('')
@@ -455,24 +450,9 @@ def page_propose():
     df_stock['Kode Material'] = df_stock['Kode Material'].astype(str).str.strip().str.upper()
     
     propose = df_stock.merge(m1_use, on=['PLTD', 'Kode Material'], how='left')
+    for col in ['Qty', 'Keb_PM', 'Keb_Aktual']:
+        if col in propose.columns: propose[col] = pd.to_numeric(propose[col], errors='coerce').fillna(0)
     
-    for col in ['Keb_PM', 'Keb_Aktual']:
-        if col in propose.columns:
-            propose[col] = propose[col].fillna(0)
-        with st.expander("🔍 Debug Merge", expanded=True):
-        # Cek Krueng Raya
-        kr_stok = df_stock[df_stock['PLTD'] == 'KRUENG RAYA']
-        kr_m1 = m1_use[m1_use['PLTD'] == 'KRUENG RAYA']
-        kr_merge = propose[propose['PLTD'] == 'KRUENG RAYA']
-        
-        st.write(f"**KRUENG RAYA:** Stok={len(kr_stok)}, M1={len(kr_m1)}, Merge={len(kr_merge)}")
-        st.write("**Sample Krueng Raya setelah merge:**")
-        st.dataframe(kr_merge[['PLTD','Kode Material','Nama Material','Qty','Keb_Aktual']].head(5), use_container_width=True)
-        
-        # Cek Air Anyir
-        aa_merge = propose[propose['PLTD'] == 'AIR ANYIR']
-        st.write(f"**AIR ANYIR:** Merge={len(aa_merge)}")
-        
     propose = propose[propose['Jenis'] == 'Preventive']
     
     st.sidebar.header("🎯 Filter Propose")
