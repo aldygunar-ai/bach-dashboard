@@ -89,6 +89,7 @@ NORMALIZE_NAME = {
 def norm(kode, nama):
     """Normalisasi nama material"""
     k = str(kode).strip().upper()
+    nama_lower = str(nama).strip().lower()
     
     # Cek multi-varian dulu
     if k in MULTI_VARIANT_MAP:
@@ -98,12 +99,18 @@ def norm(kode, nama):
     
     if k in NORMALIZE_NAME:
         return NORMALIZE_NAME[k]
+    
     for pk, pn in PREVENTIVE_MAP.items():
         if k == pk.upper():
+            # Khusus untuk Oli Shell: cek nama asli untuk tentukan Drum/IBC
+            if pk.upper() == 'RIMULA R4 X 15W-40':
+                if 'drum' in nama_lower or '209' in nama_lower:
+                    return 'Oli Shell (Drum)'
+                elif 'ibc' in nama_lower or '1000' in nama_lower:
+                    return 'Oli Shell (IBC)'
             return pn
     
-    # Deteksi Oli Shell varian (Drum vs IBC)
-    nama_lower = str(nama).strip().lower()
+    # Deteksi Oli Shell dari nama
     if 'rimula' in k.lower() or 'rimula' in nama_lower:
         if 'drum' in nama_lower or '209' in nama_lower:
             return 'Oli Shell (Drum)'
@@ -455,46 +462,35 @@ def home():
 # ==================== HELPER: HITUNG SISA BULAN ====================
 def hitung_sisa_bulan(df_stock, m1):
     """
-    Menghitung Sisa Bulan dengan logika:
-    1. Merge stok dengan M1 via Primary Code (prioritas)
-    2. Fallback merge via Kode Material untuk yang tidak match
-    3. Sisa Bulan = round(Qty / Keb_Aktual, 1)
+    Menghitung Sisa Bulan dengan merge via Primary Code + PLTD.
+    Sisa Bulan = round(Qty / Keb_Aktual, 1)
     """
     if df_stock.empty or m1 is None:
         return pd.DataFrame()
     
-    # Siapkan M1 - ambil kolom yang diperlukan
-    # Pastikan kolom 'primary_code' ada, kalau tidak buat dari kode_material
+    # Siapkan M1
     if 'primary_code' not in m1.columns:
         m1['primary_code'] = m1['kode_material'].apply(get_primary_code)
     
-    m1_use = m1[['pltd', 'kode_material', 'primary_code', 'keb_aktual']].copy()
-    m1_use.columns = ['PLTD_M1', 'Kode_M1', 'Primary_Code_M1', 'Keb_Aktual']
+    m1_use = m1[['pltd', 'primary_code', 'keb_aktual']].copy()
+    m1_use.columns = ['PLTD_M1', 'Primary_Code_M1', 'Keb_Aktual']
     
-    # Clean M1
+    # Clean
     m1_use['PLTD_M1'] = m1_use['PLTD_M1'].astype(str).str.strip().str.upper()
     m1_use['Primary_Code_M1'] = m1_use['Primary_Code_M1'].astype(str).str.strip().str.upper()
-    m1_use['Kode_M1'] = m1_use['Kode_M1'].astype(str).str.strip().str.upper()
     m1_use['Keb_Aktual'] = pd.to_numeric(m1_use['Keb_Aktual'], errors='coerce').fillna(0)
     
-    # HAPUS baris yang tidak valid
-    m1_use = m1_use[m1_use['PLTD_M1'] != '']
-    m1_use = m1_use[m1_use['Primary_Code_M1'] != '']
-    
-    # AMBIL MAX Keb_Aktual per PLTD + Primary Code (karena mungkin ada duplikat)
-    m1_use = m1_use.groupby(['PLTD_M1', 'Primary_Code_M1'], as_index=False).agg({
-        'Keb_Aktual': 'max',
-        'Kode_M1': 'first'  # simpan salah satu kode
-    })
+    # Hapus baris kosong & duplikat
+    m1_use = m1_use[(m1_use['PLTD_M1'] != '') & (m1_use['Primary_Code_M1'] != '')]
+    m1_use = m1_use.drop_duplicates(subset=['PLTD_M1', 'Primary_Code_M1'], keep='last')
     
     # Siapkan stock
     stok = df_stock.copy()
     stok['PLTD'] = stok['PLTD'].astype(str).str.strip().str.upper()
     stok['Primary Code'] = stok['Primary Code'].astype(str).str.strip().str.upper()
-    stok['Kode Material'] = stok['Kode Material'].astype(str).str.strip().str.upper()
     stok = stok.reset_index(drop=True)
     
-    # Merge step 1: via Primary Code
+    # Merge
     merged = stok.merge(
         m1_use,
         left_on=['PLTD', 'Primary Code'],
@@ -502,25 +498,18 @@ def hitung_sisa_bulan(df_stock, m1):
         how='left'
     )
     
-    # Merge step 2: untuk yang masih NaN, coba via Kode Material
+    # Untuk yang null, coba merge via Kode Material
     mask_null = merged['Keb_Aktual'].isna() | (merged['Keb_Aktual'] == 0)
     
     if mask_null.any():
-        # Siapkan M1 untuk fallback via Kode Material
         m1_kode = m1[['pltd', 'kode_material', 'keb_aktual']].copy()
         m1_kode.columns = ['PLTD_M1', 'Kode_M1', 'Keb_Aktual_kode']
         m1_kode['PLTD_M1'] = m1_kode['PLTD_M1'].astype(str).str.strip().str.upper()
         m1_kode['Kode_M1'] = m1_kode['Kode_M1'].astype(str).str.strip().str.upper()
         m1_kode['Keb_Aktual_kode'] = pd.to_numeric(m1_kode['Keb_Aktual_kode'], errors='coerce').fillna(0)
-        m1_kode = m1_kode.groupby(['PLTD_M1', 'Kode_M1'], as_index=False)['Keb_Aktual_kode'].max()
+        m1_kode = m1_kode.drop_duplicates(subset=['PLTD_M1', 'Kode_M1'], keep='last')
         
-        # Ambil baris yang null saja
-        null_rows = merged[mask_null].copy()
-        # Buang kolom M1 dari merge pertama
-        null_cols_to_drop = ['PLTD_M1', 'Primary_Code_M1', 'Kode_M1', 'Keb_Aktual']
-        null_rows = null_rows.drop(columns=[c for c in null_cols_to_drop if c in null_rows.columns])
-        
-        # Merge ulang via Kode Material
+        null_rows = merged[mask_null].drop(columns=['PLTD_M1', 'Primary_Code_M1', 'Keb_Aktual'], errors='ignore')
         null_fixed = null_rows.merge(
             m1_kode,
             left_on=['PLTD', 'Kode Material'],
@@ -528,24 +517,22 @@ def hitung_sisa_bulan(df_stock, m1):
             how='left'
         )
         
-        # Update nilai di merged untuk baris yang null
+        # Update via index alignment
         null_indices = merged.index[mask_null]
         for i, idx in enumerate(null_indices):
             if i < len(null_fixed):
-                new_val = null_fixed.iloc[i]['Keb_Aktual_kode']
+                new_val = null_fixed.iloc[i].get('Keb_Aktual_kode', 0)
                 if pd.notna(new_val) and new_val > 0:
                     merged.loc[idx, 'Keb_Aktual'] = new_val
     
     # Bersihkan
     merged['Keb_Aktual'] = pd.to_numeric(merged['Keb_Aktual'], errors='coerce').fillna(0)
+    merged = merged.drop(columns=['PLTD_M1', 'Primary_Code_M1'], errors='ignore')
     
-    # Buang kolom M1
-    merged = merged.drop(columns=['PLTD_M1', 'Primary_Code_M1', 'Kode_M1'], errors='ignore')
-    
-    # HITUNG Sisa Bulan = round(Qty / Keb_Aktual, 1) — sesuai rumus manual
+    # Hitung Sisa Bulan = round(Qty / Keb_Aktual, 1)
     merged['Sisa_Bulan'] = np.where(
         merged['Keb_Aktual'] > 0,
-        round(merged['Qty'] / merged['Keb_Aktual'], 1),
+        (merged['Qty'] / merged['Keb_Aktual']).round(1),
         0.0
     )
     
