@@ -50,8 +50,15 @@ PREVENTIVE_MAP = {
     '2020PM V30-C': 'Element Water Separator', 'FS1006': 'Fuel Filter',
     'WF2076': 'Water Filter', '3629140': 'Cylinder head cover gasket',
     'AF872': 'Air Filter Element', 'AF25278': 'Air Filter Element',
+    'AF25278 (Free)': 'Air Filter Element',  # TAMBAHKAN
     'AHO1135': 'Air Filter Element (Aksa)', '5413003': 'V-BELT Fan Radiator',
     '3015257': 'V-BELT (Aksa)', '5412990': 'V-BELT Alternator',
+    '5PK889': 'V-BELT Alternator',           # TAMBAHKAN (single code)
+    '21-3107': 'V-BELT Alternator',          # TAMBAHKAN
+    '25471145': 'V-BELT Alternator',         # TAMBAHKAN
+    '23PK2032': 'V-BELT Fan Radiator',       # TAMBAHKAN
+    '21-3110': 'V-BELT Fan Radiator',        # TAMBAHKAN
+    '25477108': 'V-BELT Fan Radiator',       # TAMBAHKAN
     'RIMULA R4 X 15W-40': 'Oli Shell', 'WCL': 'Coolant',
 }
 
@@ -70,10 +77,14 @@ def norm(kode, nama):
 
 def is_prev(kode):
     k = str(kode).strip().upper()
-    for pk in PREVENTIVE_MAP:
-        if k == pk.upper(): return True
-        for p in re.split(r'\s*/\s*', k):
-            if p == pk.upper(): return True
+    # Split kode multi-varian (contoh: "5PK889 / 21-3107 / 25471145")
+    for part in re.split(r'\s*/\s*', k):
+        part = part.strip()
+        if part in PREVENTIVE_MAP:
+            return True
+    # Cek juga kode lengkap
+    if k in PREVENTIVE_MAP:
+        return True
     return False
 
 def is_valid(kode, nama):
