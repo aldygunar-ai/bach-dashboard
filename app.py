@@ -450,30 +450,28 @@ def page_propose():
     df_stock['Kode Material'] = df_stock['Kode Material'].astype(str).str.strip().str.upper()
     
     propose = df_stock.merge(m1_use, on=['PLTD', 'Kode Material'], how='left')
-    for col in ['Qty', 'Keb_PM', 'Keb_Aktual']:
-        if col in propose.columns: propose[col] = pd.to_numeric(propose[col], errors='coerce').fillna(0)
     
-    propose = propose[propose['Jenis'] == 'Preventive']
-
-        # Tambahkan PLTD dari M1 yang tidak ada di stok (dengan Qty = 0)
+    # Tambahkan PLTD dari M1 yang tidak ada di stok (dengan Qty = 0)
     pltd_stok = set(df_stock['PLTD'].unique())
     pltd_m1 = set(m1_use['PLTD'].unique())
     pltd_missing = pltd_m1 - pltd_stok
     
     if pltd_missing:
-        # Ambil data dari M1 untuk PLTD yang hilang
         missing_data = m1_use[m1_use['PLTD'].isin(pltd_missing)].copy()
         missing_data['Qty'] = 0
-        missing_data['Nama Material'] = missing_data['Kode Material'].map(
-            lambda x: PREVENTIVE_MAP.get(x.upper(), 'Unknown')
+        missing_data['Nama Material'] = missing_data['Kode Material'].apply(
+            lambda x: PREVENTIVE_MAP.get(x.upper(), PREVENTIVE_MAP.get(x.split('/')[0].strip().upper(), 'Unknown'))
         )
         missing_data['Jenis'] = 'Preventive'
-        
-        # Gabungkan dengan propose
         propose = pd.concat([propose, missing_data], ignore_index=True)
     
+    for col in ['Qty', 'Keb_PM', 'Keb_Aktual']:
+        if col in propose.columns: propose[col] = pd.to_numeric(propose[col], errors='coerce').fillna(0)
+    
+    propose = propose[propose['Jenis'] == 'Preventive']
+    
     st.sidebar.header("🎯 Filter Propose")
-    pltd_opts = sorted(df_stock['PLTD'].unique())
+    pltd_opts = sorted(propose['PLTD'].unique())
     sel_pltd = st.sidebar.multiselect("📍 PLTD", pltd_opts, default=[])
     jumlah_bulan = st.sidebar.slider("📅 Jumlah Bulan Order", min_value=1, max_value=12, value=3, step=1)
     status_opts = ['🔴 Urgent', '🟠 Warning', '🟡 Perlu Order', '🟢 Aman']
@@ -495,21 +493,6 @@ def page_propose():
     prev['Status'] = prev.apply(get_status, axis=1)
     prev = prev[prev['Keb_Aktual'] > 0]
     if sel_status: prev = prev[prev['Status'].isin(sel_status)]
-            # DEBUG: LIHAT PLTD YANG ADA
-    with st.expander("🔍 DEBUG PLTD", expanded=True):
-        st.write("**PLTD di Stok:**", sorted(df_stock['PLTD'].unique()))
-        st.write("**PLTD di M1:**", sorted(m1_use['PLTD'].unique()))
-        st.write("**PLTD di Propose (sebelum filter):**", sorted(propose['PLTD'].unique()))
-        st.write("**PLTD di Prev (setelah filter Keb_Aktual > 0):**", sorted(prev['PLTD'].unique()))
-        
-        # Cek PLTD yang Anda sebutkan
-        target = ['KRUENG RAYA', 'AIR ANYIR', 'PADANG MANGGAR', 'MERAWANG', 'WAENA']
-        for p in target:
-            s = p in df_stock['PLTD'].values
-            m = p in m1_use['PLTD'].values
-            pr = p in propose['PLTD'].values
-            pv = p in prev['PLTD'].values
-            st.write(f"- **{p}**: Stok={s}, M1={m}, Propose={pr}, Prev={pv}")
     
     # 1. Sisa Stok
     st.subheader("⏳ Sisa Stok Preventive dalam Bulan")
