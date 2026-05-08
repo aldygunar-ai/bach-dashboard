@@ -454,6 +454,23 @@ def page_propose():
         if col in propose.columns: propose[col] = pd.to_numeric(propose[col], errors='coerce').fillna(0)
     
     propose = propose[propose['Jenis'] == 'Preventive']
+
+        # Tambahkan PLTD dari M1 yang tidak ada di stok (dengan Qty = 0)
+    pltd_stok = set(df_stock['PLTD'].unique())
+    pltd_m1 = set(m1_use['PLTD'].unique())
+    pltd_missing = pltd_m1 - pltd_stok
+    
+    if pltd_missing:
+        # Ambil data dari M1 untuk PLTD yang hilang
+        missing_data = m1_use[m1_use['PLTD'].isin(pltd_missing)].copy()
+        missing_data['Qty'] = 0
+        missing_data['Nama Material'] = missing_data['Kode Material'].map(
+            lambda x: PREVENTIVE_MAP.get(x.upper(), 'Unknown')
+        )
+        missing_data['Jenis'] = 'Preventive'
+        
+        # Gabungkan dengan propose
+        propose = pd.concat([propose, missing_data], ignore_index=True)
     
     st.sidebar.header("🎯 Filter Propose")
     pltd_opts = sorted(df_stock['PLTD'].unique())
