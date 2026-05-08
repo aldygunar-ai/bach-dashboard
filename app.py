@@ -21,6 +21,7 @@ st.markdown("""
     div[data-testid="stMetricValue"] { font-size: 28px; font-weight: 800; color: #0A2540; }
     .stPlotlyChart { background: white; border-radius: 10px; padding: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
     [data-testid="stDataFrame"] { background: white; border-radius: 10px; padding: 8px; }
+    .debug-box { background: #FFF3CD; border: 1px solid #FFC107; border-radius: 8px; padding: 12px; margin: 8px 0; font-size: 13px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -34,7 +35,7 @@ PLTD_SHEETS = {
     'Merawang': '1WrNipP179XrvKjNIGjeNSnCz94_6IJQBf4pM-vO5OO8',
     'Air Anyir': '10dCcXN574G_xGxsnaq7UmExsA7asbz_HTJPMo6oWN2o',
     'Padang Manggar': '1u8nurDgXSRLCFB0p9YFv3x7i_8FDU0FZmsQK_yw4W4s',
-    'Krueng Raya': '1u8nurDgXSRLCFB0p9YFv3x7i_8FDU0FZmsQK_yw4W4s',
+    'Krueng Raya': '1u8nurDgXSRLCFB0p9YFv3x7i_8FDU0FZmsQK_yw4W4s',  # ⚠️ SAMA dengan Padang Manggar
     'Lueng Bata': '1syFmB3cwN0FfYRBmjgYTshlFiZAXdvVDdcdZ-Xr_p6g',
     'Ulee Kareng': '1BlhNGU1L6QJq3W2Qi7Vmp3aOdYNalACKJUwUUecDeoU',
     'Waena': '10NKbFUi0SVh1784OQnSU0ULhWzL6_AK7XLY-8EgKbG8',
@@ -71,6 +72,12 @@ PREVENTIVE_MAP = {
     'WCL': 'Coolant',
 }
 
+# Multi-varian mapping: kode gabungan -> primary code
+MULTI_VARIANT_MAP = {
+    '5PK889 / 21-3107 / 25471145': '5PK889',
+    '23PK2032 / 21-3110 / 25477108': '23PK2032',
+}
+
 NORMALIZE_NAME = {
     'AF25278': 'Air Filter Element',
     'AF872': 'Air Filter Element',
@@ -80,15 +87,43 @@ NORMALIZE_NAME = {
 }
 
 def norm(kode, nama):
+    """Normalisasi nama material"""
     k = str(kode).strip().upper()
+    
+    # Cek multi-varian dulu
+    if k in MULTI_VARIANT_MAP:
+        primary = MULTI_VARIANT_MAP[k]
+        if primary in PREVENTIVE_MAP:
+            return PREVENTIVE_MAP[primary]
+    
     if k in NORMALIZE_NAME:
         return NORMALIZE_NAME[k]
     for pk, pn in PREVENTIVE_MAP.items():
         if k == pk.upper():
             return pn
+    
+    # Deteksi Oli Shell varian (Drum vs IBC)
+    nama_lower = str(nama).strip().lower()
+    if 'rimula' in k.lower() or 'rimula' in nama_lower:
+        if 'drum' in nama_lower or '209' in nama_lower:
+            return 'Oli Shell (Drum)'
+        elif 'ibc' in nama_lower or '1000' in nama_lower:
+            return 'Oli Shell (IBC)'
+        return 'Oli Shell'
+    
     return nama
 
+def get_primary_code(kode):
+    """Ambil kode primer dari kode multi-varian"""
+    k = str(kode).strip().upper()
+    if k in MULTI_VARIANT_MAP:
+        return MULTI_VARIANT_MAP[k]
+    # Ambil kode pertama jika ada split
+    parts = re.split(r'\s*/\s*', k)
+    return parts[0].strip() if parts else k
+
 def is_prev(kode):
+    """Cek apakah kode termasuk preventive"""
     k = str(kode).strip().upper()
     for part in re.split(r'\s*/\s*', k):
         part = part.strip()
@@ -122,8 +157,11 @@ def load_all():
         'm1': None,
         'm2': None,
         'cik': pd.DataFrame(),
-        'pemakaian': pd.DataFrame()
+        'pemakaian': pd.DataFrame(),
+        'debug_log': []  # Untuk menyimpan log debug
     }
+
+    debug_log = []
 
     # STOK PLTD
     rows = []
@@ -131,8 +169,11 @@ def load_all():
         try:
             sh = cl.open_by_key(sid)
             data = sh.sheet1.get_all_values()
+            debug_log.append(f"✅ {pltd}: {len(data)-1} baris data (termasuk header)")
             if len(data) < 2:
+                debug_log.append(f"⚠️ {pltd}: Data < 2 baris, skip")
                 continue
+            count_valid = 0
             for r in data[1:]:
                 if len(r) < 9:
                     continue
@@ -141,42 +182,71 @@ def load_all():
                 qty_s = r[8].strip() if len(r) > 8 else '0'
                 if not is_valid(kode, nama):
                     continue
-                qty = float(qty_s.replace(',', '')) if qty_s else 0.0
-                rows.append((pltd.strip().upper(), kode.upper().strip(), norm(kode, nama).strip(), qty))
-        except:
-            pass
-    df = pd.DataFrame(rows, columns=['PLTD', 'Kode Material', 'Nama Material', 'Qty'])
+                try:
+                    qty = float(qty_s.replace(',', '')) if qty_s else 0.0
+                except:
+                    qty = 0.0
+                rows.append((pltd.strip().upper(), kode.upper().strip(), norm(kode, nama).strip(), qty, get_primary_code(kode)))
+                count_valid += 1
+            debug_log.append(f"   → {count_valid} baris valid")
+        except Exception as e:
+            debug_log.append(f"❌ {pltd}: GAGAL - {str(e)[:100]}")
+    
+    df = pd.DataFrame(rows, columns=['PLTD', 'Kode Material', 'Nama Material', 'Qty', 'Primary Code'])
     if not df.empty:
         df['Jenis'] = df['Kode Material'].apply(lambda k: 'Preventive' if is_prev(k) else 'Corrective')
-        df = df.groupby(['PLTD', 'Kode Material', 'Nama Material', 'Jenis'], as_index=False)['Qty'].sum()
+        df = df.groupby(['PLTD', 'Kode Material', 'Nama Material', 'Primary Code', 'Jenis'], as_index=False)['Qty'].sum()
     res['stock'] = df
 
     # MASTER DATA
     try:
         sh = cl.open_by_key(MASTER_PLTD_ID)
+        debug_log.append(f"✅ Master PLTD: {len(sh.worksheets())} worksheets")
         for ws in sh.worksheets():
             t = ws.title.strip().lower()
+            debug_log.append(f"   Sheet: '{ws.title}' → cocok: master1={'master' in t and '1' in t}, master2={'master' in t and '2' in t}")
+            
             if ('master' in t or 'mater' in t) and '1' in t:
                 try:
                     d = get_as_dataframe(ws, evaluate_formulas=True)
                     d.columns = [str(c).strip() for c in d.columns]
+                    debug_log.append(f"   M1 columns: {list(d.columns)}")
+                    
                     pltd_col = next((c for c in d.columns if 'pltd' in c.lower()), None)
                     kode_col = next((c for c in d.columns if 'kode' in c.lower()), None)
                     aktual_col = next((c for c in d.columns if 'aktual' in c.lower()), None)
+                    pm_col = next((c for c in d.columns if 'pm' in c.lower() and 'cf' in c.lower()), None)
+                    
                     if pltd_col:
                         d.rename(columns={pltd_col: 'pltd'}, inplace=True)
                     if kode_col:
                         d.rename(columns={kode_col: 'kode_material'}, inplace=True)
                     if aktual_col:
                         d.rename(columns={aktual_col: 'keb_aktual'}, inplace=True)
+                    if pm_col:
+                        d.rename(columns={pm_col: 'keb_pm'}, inplace=True)
+                    
                     for col in ['pltd', 'kode_material']:
                         if col in d.columns:
                             d[col] = d[col].astype(str).str.strip().str.upper()
-                    if 'keb_aktual' in d.columns:
-                        d['keb_aktual'] = pd.to_numeric(d['keb_aktual'], errors='coerce').fillna(0)
+                    
+                    # Tambah primary code
+                    if 'kode_material' in d.columns:
+                        d['primary_code'] = d['kode_material'].apply(get_primary_code)
+                    
+                    for col in ['keb_aktual', 'keb_pm']:
+                        if col in d.columns:
+                            d[col] = pd.to_numeric(d[col], errors='coerce').fillna(0)
+                    
+                    # Kalau keb_pm tidak ada, pakai keb_aktual
+                    if 'keb_pm' not in d.columns and 'keb_aktual' in d.columns:
+                        d['keb_pm'] = d['keb_aktual']
+                    
                     res['m1'] = d
-                except:
-                    pass
+                    debug_log.append(f"   M1 loaded: {len(d)} baris, PLTD unik: {d['pltd'].nunique() if 'pltd' in d.columns else 'N/A'}")
+                except Exception as e:
+                    debug_log.append(f"   ❌ M1 error: {str(e)[:100]}")
+            
             if ('master' in t or 'mater' in t) and '2' in t:
                 try:
                     d = get_as_dataframe(ws, evaluate_formulas=True)
@@ -194,10 +264,11 @@ def load_all():
                     else:
                         d['durasi_kirim'] = 14
                     res['m2'] = d
-                except:
-                    pass
-    except:
-        pass
+                    debug_log.append(f"   M2 loaded: {len(d)} baris")
+                except Exception as e:
+                    debug_log.append(f"   ❌ M2 error: {str(e)[:100]}")
+    except Exception as e:
+        debug_log.append(f"❌ Master PLTD GAGAL: {str(e)[:100]}")
 
     # CIKANDE
     try:
@@ -225,13 +296,19 @@ def load_all():
             except:
                 qty = 0.0
             if nama or kode:
-                crows.append({'Kode Material': kode.upper().strip(), 'Nama Material': norm(kode, nama).strip(), 'WH Cikande': qty})
+                crows.append({
+                    'Kode Material': kode.upper().strip(),
+                    'Nama Material': norm(kode, nama).strip(),
+                    'Primary Code': get_primary_code(kode),
+                    'WH Cikande': qty
+                })
         dc = pd.DataFrame(crows)
         if not dc.empty:
-            dc = dc.groupby(['Kode Material', 'Nama Material'], as_index=False)['WH Cikande'].sum()
+            dc = dc.groupby(['Kode Material', 'Nama Material', 'Primary Code'], as_index=False)['WH Cikande'].sum()
         res['cik'] = dc
-    except:
-        pass
+        debug_log.append(f"✅ Cikande: {len(dc)} baris")
+    except Exception as e:
+        debug_log.append(f"❌ Cikande GAGAL: {str(e)[:100]}")
 
     # PEMAKAIAN (SHEET GABUNGAN)
     try:
@@ -302,9 +379,11 @@ def load_all():
             if not df_p.empty:
                 df_p['Tanggal'] = pd.to_datetime(df_p['Tanggal'], errors='coerce')
             res['pemakaian'] = df_p
-    except:
-        pass
+            debug_log.append(f"✅ Gabungan: {len(df_p)} baris")
+    except Exception as e:
+        debug_log.append(f"❌ Gabungan GAGAL: {str(e)[:100]}")
 
+    res['debug_log'] = debug_log
     return res
 
 # ==================== HOME ====================
@@ -336,16 +415,53 @@ def page_stock():
     st.title("📦 Stok Material PLTD")
     data = load_all()
     df = data['stock'].copy()
+    debug_log = data.get('debug_log', [])
+    
     if df.empty:
         st.warning("Data belum tersedia.")
         return
+    
     cik = data['cik']
     if not cik.empty:
-        df = df.merge(cik, on=['Kode Material', 'Nama Material'], how='left')
+        df = df.merge(cik, on=['Kode Material', 'Nama Material', 'Primary Code'], how='left')
         df['WH Cikande'] = df['WH Cikande'].fillna(0)
     else:
         df['WH Cikande'] = 0.0
 
+    # ---- DEBUG PANEL ----
+    with st.sidebar:
+        with st.expander("🔧 DEBUG INFO", expanded=False):
+            st.markdown("### Log Load Data")
+            for log in debug_log:
+                if '❌' in log:
+                    st.error(log)
+                elif '⚠️' in log:
+                    st.warning(log)
+                else:
+                    st.text(log)
+            
+            st.markdown("---")
+            st.markdown("### PLTD di Stock vs M1")
+            m1 = data['m1']
+            if m1 is not None and 'pltd' in m1.columns:
+                pltd_stok = set(df['PLTD'].unique())
+                pltd_m1 = set(m1['pltd'].unique())
+                st.write(f"**Di Stock:** {sorted(pltd_stok)}")
+                st.write(f"**Di M1:** {sorted(pltd_m1)}")
+                missing_stok = pltd_m1 - pltd_stok
+                missing_m1 = pltd_stok - pltd_m1
+                if missing_stok:
+                    st.warning(f"⚠️ Di M1 tapi TIDAK di stock: {sorted(missing_stok)}")
+                if missing_m1:
+                    st.info(f"ℹ️ Di stock tapi TIDAK di M1: {sorted(missing_m1)}")
+            
+            st.markdown("---")
+            st.markdown("### Sample Stok per PLTD")
+            for pltd in sorted(df['PLTD'].unique()):
+                count = len(df[df['PLTD'] == pltd])
+                qty_sum = df[df['PLTD'] == pltd]['Qty'].sum()
+                st.text(f"{pltd}: {count} baris, Qty={qty_sum:,.0f}")
+    
     st.sidebar.header("Filter Stok")
     sel_pltd = st.sidebar.multiselect("PLTD", sorted(df['PLTD'].unique()), default=[])
     sel_jenis = st.sidebar.multiselect("Jenis Material", ['Preventive', 'Corrective'], default=[])
@@ -384,26 +500,67 @@ def page_stock():
 
     st.subheader("⏳ Sisa Stok Preventive dalam Bulan")
     if not prev.empty and m1 is not None and 'pltd' in m1.columns and 'kode_material' in m1.columns and 'keb_aktual' in m1.columns:
-        p1 = m1[['pltd', 'kode_material', 'keb_aktual']].copy()
+        p1 = m1[['pltd', 'kode_material', 'primary_code', 'keb_aktual']].copy()
         p1['pltd'] = p1['pltd'].str.strip().str.upper()
         p1['kode_material'] = p1['kode_material'].str.strip().str.upper()
-        sisa = prev.merge(p1, left_on=['PLTD', 'Kode Material'], right_on=['pltd', 'kode_material'], how='left')
-        sisa.drop(columns=['pltd', 'kode_material'], inplace=True, errors='ignore')
-        sisa['Sisa Bulan'] = np.where(sisa['keb_aktual'].notna() & (sisa['keb_aktual'] > 0), np.floor(sisa['Qty'] / sisa['keb_aktual'] * 10) / 10, 0.0)
-        sp = sisa.pivot_table(index=['Kode Material', 'Nama Material'], columns='PLTD', values='Sisa Bulan', aggfunc='first', fill_value=0.0)
+        
+        # Merge via PLTD + Primary Code + Kode Material (coba primary code dulu)
+        sisa = prev.merge(
+            p1,
+            left_on=['PLTD', 'Primary Code'],
+            right_on=['pltd', 'primary_code'],
+            how='left',
+            suffixes=('', '_m1')
+        )
+        
+        # Kalau ada yang NaN, coba merge via kode_material
+        mask_null = sisa['keb_aktual'].isna()
+        if mask_null.any():
+            sisa_null = prev[mask_null].merge(
+                p1,
+                left_on=['PLTD', 'Kode Material'],
+                right_on=['pltd', 'kode_material'],
+                how='left',
+                suffixes=('', '_m1b')
+            )
+            # Update yang null
+            for col in ['keb_aktual', 'primary_code']:
+                if col in sisa_null.columns:
+                    sisa.loc[mask_null, col] = sisa_null[col].values
+        
+        sisa.drop(columns=[c for c in sisa.columns if c.endswith('_m1') or c.endswith('_m1b')], inplace=True, errors='ignore')
+        sisa.drop(columns=['pltd', 'kode_material', 'primary_code'], inplace=True, errors='ignore')
+        
+        sisa['Sisa Bulan'] = np.where(
+            sisa['keb_aktual'].notna() & (sisa['keb_aktual'] > 0),
+            np.floor(sisa['Qty'] / sisa['keb_aktual'] * 10) / 10,
+            0.0
+        )
+        
+        sp = sisa.pivot_table(
+            index=['Kode Material', 'Nama Material'],
+            columns='PLTD',
+            values='Sisa Bulan',
+            aggfunc='first',
+            fill_value=0.0
+        )
         sp = sp.reset_index()
         pltd_cols_s = [c for c in sp.columns if c not in ('Kode Material', 'Nama Material')]
         sp = sp[['Kode Material', 'Nama Material'] + pltd_cols_s]
+        
         if highlight_only:
             mask = (sp[pltd_cols_s] > 0) & (sp[pltd_cols_s] <= 1.5)
             sp = sp[mask.any(axis=1)]
+        
         cfg_s = {'Kode Material': st.column_config.TextColumn(pinned=True), 'Nama Material': st.column_config.TextColumn(pinned=True)}
         for col in pltd_cols_s:
             cfg_s[col] = st.column_config.NumberColumn(format="%.1f")
+        
         def hl(val):
             if isinstance(val, (int, float)) and val <= 1.5:
                 return 'background-color: #ffcccc; color: #cc0000; font-weight: bold;'
             return ''
+        
         st.dataframe(sp.style.map(hl, subset=pltd_cols_s), column_config=cfg_s, use_container_width=True, hide_index=True)
     else:
         st.info("Data Sisa Bulan tidak tersedia.")
@@ -551,15 +708,32 @@ def page_propose():
         st.warning("Data stok atau Master Data 1 tidak tersedia.")
         return
 
-    m1_use = m1[['pltd', 'kode_material', 'Kebutuhan Perbulan Sesuai CF PM', 'keb_aktual']].copy()
-    m1_use.columns = ['PLTD', 'Kode Material', 'Keb_PM', 'Keb_Aktual']
+    m1_use = m1[['pltd', 'kode_material', 'primary_code', 'keb_pm', 'keb_aktual']].copy()
+    m1_use.columns = ['PLTD', 'Kode Material', 'Primary Code', 'Keb_PM', 'Keb_Aktual']
 
     m1_use['PLTD'] = m1_use['PLTD'].astype(str).str.strip().str.upper()
     m1_use['Kode Material'] = m1_use['Kode Material'].astype(str).str.strip().str.upper()
+    m1_use['Primary Code'] = m1_use['Primary Code'].astype(str).str.strip().str.upper()
+    
     df_stock['PLTD'] = df_stock['PLTD'].astype(str).str.strip().str.upper()
     df_stock['Kode Material'] = df_stock['Kode Material'].astype(str).str.strip().str.upper()
+    df_stock['Primary Code'] = df_stock['Primary Code'].astype(str).str.strip().str.upper()
 
-    propose = df_stock.merge(m1_use, on=['PLTD', 'Kode Material'], how='left')
+    # Merge via Primary Code
+    propose = df_stock.merge(m1_use, on=['PLTD', 'Primary Code'], how='left', suffixes=('', '_m'))
+    
+    # Untuk yang null, coba merge via Kode Material
+    mask_null = propose['Keb_Aktual'].isna()
+    if mask_null.any():
+        propose_null = df_stock[mask_null].merge(
+            m1_use,
+            on=['PLTD', 'Kode Material'],
+            how='left',
+            suffixes=('', '_kb')
+        )
+        for col in ['Keb_Aktual', 'Keb_PM']:
+            if col in propose_null.columns:
+                propose.loc[mask_null, col] = propose_null[col].values
 
     # Tambahkan PLTD dari M1 yang tidak ada di stok
     pltd_stok = set(df_stock['PLTD'].unique())
@@ -569,11 +743,16 @@ def page_propose():
     if pltd_missing:
         missing_data = m1_use[m1_use['PLTD'].isin(pltd_missing)].copy()
         missing_data['Qty'] = 0
-        missing_data['Nama Material'] = missing_data['Kode Material'].apply(
-            lambda x: PREVENTIVE_MAP.get(x.upper(), PREVENTIVE_MAP.get(x.split('/')[0].strip().upper(), 'Unknown'))
+        missing_data['Nama Material'] = missing_data['Primary Code'].apply(
+            lambda x: PREVENTIVE_MAP.get(x.upper(), 'Unknown')
         )
         missing_data['Jenis'] = 'Preventive'
+        missing_data['Kode Material'] = missing_data['Kode Material'].fillna(missing_data['Primary Code'])
         propose = pd.concat([propose, missing_data], ignore_index=True)
+
+    # Bersihin kolom duplikat
+    propose = propose.loc[:, ~propose.columns.str.endswith('_m')]
+    propose = propose.loc[:, ~propose.columns.str.endswith('_kb')]
 
     for col in ['Qty', 'Keb_PM', 'Keb_Aktual']:
         if col in propose.columns:
