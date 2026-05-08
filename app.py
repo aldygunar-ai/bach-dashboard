@@ -284,6 +284,11 @@ def page_stock():
     corr = f[f['Jenis']=='Corrective'].copy()
     m1 = data['m1']
 
+        # Cek stok Pemaron
+    pemaron = df_stock[df_stock['PLTD'] == 'PEMARON']
+    st.write(f"Stok Pemaron: {len(pemaron)} baris")
+    st.dataframe(pemaron[['Kode Material','Nama Material','Qty']].head(20))
+    
     st.subheader("🔵 Material Preventive")
     if not prev.empty:
         p = prev.pivot_table(index=['Kode Material','Nama Material'], columns='PLTD', values='Qty', aggfunc='sum', fill_value=0)
