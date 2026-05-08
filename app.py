@@ -247,28 +247,69 @@ def load_all():
                 except Exception as e:
                     debug_log.append(f"   ❌ M1 error: {str(e)[:100]}")
             
-            if ('master' in t or 'mater' in t) and '2' in t:
-                try:
-                    d = get_as_dataframe(ws, evaluate_formulas=True)
-                    d.columns = [str(c).strip() for c in d.columns]
-                    pltd_col = next((c for c in d.columns if 'pltd' in c.lower()), None)
-                    dur_col = next((c for c in d.columns if 'durasi' in c.lower()), None)
-                    if pltd_col:
-                        d.rename(columns={pltd_col: 'pltd'}, inplace=True)
-                    if dur_col:
-                        d.rename(columns={dur_col: 'durasi_kirim'}, inplace=True)
-                    if 'pltd' in d.columns:
-                        d['pltd'] = d['pltd'].astype(str).str.strip().str.upper()
-                    if 'durasi_kirim' in d.columns:
-                        d['durasi_kirim'] = pd.to_numeric(d['durasi_kirim'], errors='coerce').fillna(14)
-                    else:
-                        d['durasi_kirim'] = 14
-                    res['m2'] = d
-                    debug_log.append(f"   M2 loaded: {len(d)} baris")
-                except Exception as e:
-                    debug_log.append(f"   ❌ M2 error: {str(e)[:100]}")
+if ('master' in t or 'mater' in t) and '1' in t:
+    try:
+        d = get_as_dataframe(ws, evaluate_formulas=True)
+        d.columns = [str(c).strip() for c in d.columns]
+        
+        debug_log.append(f"   M1 original columns: {list(d.columns)}")
+        
+        pltd_col = next((c for c in d.columns if 'pltd' in c.lower() or 'nama pltd' in c.lower()), None)
+        kode_col = next((c for c in d.columns if 'kode' in c.lower()), None)
+        
+        # CARI KOLOM KEBUTUHAN - prioritaskan yang mengandung 'aktual' dan 'cf'
+        aktual_col = None
+        pm_col = None
+        
+        for c in d.columns:
+            c_lower = c.lower()
+            # Cari "Aktual CF" dulu (kolom L)
+            if 'aktual' in c_lower and ('cf' in c_lower or 'sesuai' in c_lower):
+                aktual_col = c
+            # Cari "CF PM" (kolom K)
+            elif 'pm' in c_lower and 'cf' in c_lower:
+                pm_col = c
+            # Fallback
+            elif 'aktual' in c_lower and aktual_col is None:
+                aktual_col = c
+            elif 'pm' in c_lower and pm_col is None:
+                pm_col = c
+        
+        debug_log.append(f"   Detected: pltd_col={pltd_col}, kode_col={kode_col}, pm_col={pm_col}, aktual_col={aktual_col}")
+        
+        if pltd_col:
+            d.rename(columns={pltd_col: 'pltd'}, inplace=True)
+        if kode_col:
+            d.rename(columns={kode_col: 'kode_material'}, inplace=True)
+        if aktual_col:
+            d.rename(columns={aktual_col: 'keb_aktual'}, inplace=True)
+        if pm_col:
+            d.rename(columns={pm_col: 'keb_pm'}, inplace=True)
+        
+        for col in ['pltd', 'kode_material']:
+            if col in d.columns:
+                d[col] = d[col].astype(str).str.strip().str.upper()
+        
+        # Tambah primary code
+        if 'kode_material' in d.columns:
+            d['primary_code'] = d['kode_material'].apply(get_primary_code)
+        
+        for col in ['keb_aktual', 'keb_pm']:
+            if col in d.columns:
+                d[col] = pd.to_numeric(d[col], errors='coerce').fillna(0)
+        
+        # Kalau keb_pm tidak ada, pakai keb_aktual
+        if 'keb_pm' not in d.columns and 'keb_aktual' in d.columns:
+            d['keb_pm'] = d['keb_aktual']
+        # Kalau keb_aktual tidak ada, pakai keb_pm  
+        if 'keb_aktual' not in d.columns and 'keb_pm' in d.columns:
+            d['keb_aktual'] = d['keb_pm']
+        
+        res['m1'] = d
+        debug_log.append(f"   M1 loaded: {len(d)} baris, PLTD unik: {d['pltd'].nunique() if 'pltd' in d.columns else 'N/A'}")
+        debug_log.append(f"   Sample Keb_Aktual: {d['keb_aktual'].head(5).tolist() if 'keb_aktual' in d.columns else 'N/A'}")
     except Exception as e:
-        debug_log.append(f"❌ Master PLTD GAGAL: {str(e)[:100]}")
+        debug_log.append(f"   ❌ M1 error: {str(e)[:150]}")
 
     # CIKANDE
     try:
