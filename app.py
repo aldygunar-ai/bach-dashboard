@@ -412,6 +412,7 @@ def home():
 
 # ==================== PAGE STOCK ====================
 # ==================== HELPER: HITUNG SISA BULAN ====================
+# ==================== HELPER: HITUNG SISA BULAN ====================
 def hitung_sisa_bulan(df_stock, m1):
     """
     Menghitung Sisa Bulan dengan logika:
@@ -422,22 +423,27 @@ def hitung_sisa_bulan(df_stock, m1):
     if df_stock.empty or m1 is None:
         return pd.DataFrame()
     
-    # Siapkan M1
+    # Siapkan M1 - ambil kolom yang diperlukan
     m1_use = m1[['pltd', 'kode_material', 'primary_code', 'keb_aktual']].copy()
     m1_use.columns = ['PLTD_M1', 'Kode_M1', 'Primary_Code_M1', 'Keb_Aktual']
+    
+    # Clean M1
     m1_use['PLTD_M1'] = m1_use['PLTD_M1'].astype(str).str.strip().str.upper()
     m1_use['Primary_Code_M1'] = m1_use['Primary_Code_M1'].astype(str).str.strip().str.upper()
     m1_use['Kode_M1'] = m1_use['Kode_M1'].astype(str).str.strip().str.upper()
     m1_use['Keb_Aktual'] = pd.to_numeric(m1_use['Keb_Aktual'], errors='coerce').fillna(0)
     
-    # Hapus duplikat di M1 (ambil yang pertama)
-    m1_use = m1_use.drop_duplicates(subset=['PLTD_M1', 'Primary_Code_M1'], keep='first')
+    # Hapus duplikat di M1 (simpan max Keb_Aktual per PLTD + Primary Code)
+    m1_use = m1_use.groupby(['PLTD_M1', 'Primary_Code_M1', 'Kode_M1'], as_index=False)['Keb_Aktual'].max()
     
     # Siapkan stock
     stok = df_stock.copy()
     stok['PLTD'] = stok['PLTD'].astype(str).str.strip().str.upper()
     stok['Primary Code'] = stok['Primary Code'].astype(str).str.strip().str.upper()
     stok['Kode Material'] = stok['Kode Material'].astype(str).str.strip().str.upper()
+    
+    # Reset index biar aman
+    stok = stok.reset_index(drop=True)
     
     # Merge step 1: via Primary Code
     merged = stok.merge(
@@ -449,29 +455,42 @@ def hitung_sisa_bulan(df_stock, m1):
     
     # Merge step 2: untuk yang masih NaN, coba via Kode Material
     mask_null = merged['Keb_Aktual'].isna() | (merged['Keb_Aktual'] == 0)
+    
     if mask_null.any():
         # Siapkan M1 tanpa primary code untuk fallback
-        m1_fallback = m1_use.drop(columns=['Primary_Code_M1']).drop_duplicates(subset=['PLTD_M1', 'Kode_M1'], keep='first')
+        m1_fallback = m1_use[['PLTD_M1', 'Kode_M1', 'Keb_Aktual']].drop_duplicates(
+            subset=['PLTD_M1', 'Kode_M1'], keep='last'
+        )
         
-        null_rows = stok[mask_null][['PLTD', 'Kode Material', 'Primary Code', 'Nama Material', 'Qty', 'Jenis']].copy()
-        null_merged = null_rows.merge(
+        # Ambil hanya baris yang null dari merged
+        null_merged = merged[mask_null].copy()
+        
+        # Merge ulang baris null dengan M1 via Kode Material
+        null_fixed = null_merged.drop(columns=['PLTD_M1', 'Primary_Code_M1', 'Kode_M1', 'Keb_Aktual'], errors='ignore')
+        null_fixed = null_fixed.merge(
             m1_fallback,
             left_on=['PLTD', 'Kode Material'],
             right_on=['PLTD_M1', 'Kode_M1'],
             how='left'
         )
         
-        # Update nilai yang null
+        # Update nilai di merged untuk baris yang null
         for idx in merged[mask_null].index:
-            matching = null_merged[
-                (null_merged['PLTD'] == merged.loc[idx, 'PLTD']) &
-                (null_merged['Kode Material'] == merged.loc[idx, 'Kode Material'])
-            ]
-            if not matching.empty and pd.notna(matching['Keb_Aktual'].values[0]):
-                merged.loc[idx, 'Keb_Aktual'] = matching['Keb_Aktual'].values[0]
+            # Cari baris yang sama di null_fixed
+            pltd_val = merged.loc[idx, 'PLTD']
+            kode_val = merged.loc[idx, 'Kode Material']
+            
+            match = null_fixed[(null_fixed['PLTD'] == pltd_val) & (null_fixed['Kode Material'] == kode_val)]
+            if not match.empty:
+                new_val = match['Keb_Aktual'].values[0]
+                if pd.notna(new_val) and new_val > 0:
+                    merged.loc[idx, 'Keb_Aktual'] = new_val
     
     # Bersihkan kolom
     merged['Keb_Aktual'] = pd.to_numeric(merged['Keb_Aktual'], errors='coerce').fillna(0)
+    
+    # Buang kolom M1
+    merged = merged.drop(columns=['PLTD_M1', 'Primary_Code_M1', 'Kode_M1'], errors='ignore')
     
     # Hitung Sisa Bulan
     merged['Sisa_Bulan'] = np.where(
