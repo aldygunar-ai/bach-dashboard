@@ -156,7 +156,7 @@ def norm(kode, nama):
                 elif 'ibc' in nama_lower or '1000' in nama_lower:
                     return 'Oli Shell (IBC)'
             return pn
-        if 'rimula' in k.lower() or 'rimula' in nama_lower:
+    if 'rimula' in k.lower() or 'rimula' in nama_lower:
         if 'drum' in nama_lower or '209' in nama_lower:
             return 'Oli Shell (Drum)'
         elif 'ibc' in nama_lower or '1000' in nama_lower:
@@ -164,7 +164,6 @@ def norm(kode, nama):
         return 'Oli Shell'
     if 'coolant' in nama_lower or 'collant' in nama_lower or 'wcl' in k.lower():
         return 'Coolant'
-    # Normalisasi untuk format Padang Manggar dan nama-nama umum
     if 'air filter element' in nama_lower:
         return 'Air Filter Element'
     if 'gasket cylinder head' in nama_lower:
@@ -186,34 +185,6 @@ def norm(kode, nama):
     if 'v-belt (aksa)' in nama_lower or 'v belt aksa' in nama_lower:
         return 'V-BELT (Aksa)'
     if 'oli shell' in nama_lower:
-        if 'ibc' in nama_lower:
-            return 'Oli Shell (IBC)'
-        elif 'drum' in nama_lower:
-            return 'Oli Shell (Drum)'
-        return 'Oli Shell'
-    return nama
-            # Normalisasi khusus untuk format Padang Manggar
-    if 'air filter element' in nama_lower and 'af872' not in nama_lower:
-        return 'Air Filter Element'
-    if 'gasket cylinder head' in nama_lower:
-        return 'Cylinder head cover gasket'
-    if 'oil filter' in nama_lower and 'by pass' not in nama_lower:
-        return 'Oil Filter'
-    if 'oil filter by pass' in nama_lower:
-        return 'Oil Filter By pass'
-    if 'element water separator' in nama_lower or 'racor' in nama_lower:
-        return 'Element Water Separator'
-    if 'fuel filter' in nama_lower or 'element fuel filter' in nama_lower:
-        return 'Fuel Filter'
-    if 'water filter' in nama_lower:
-        return 'Water Filter'
-    if 'v-belt fan' in nama_lower or 'v belt fan' in nama_lower:
-        return 'V-BELT Fan Radiator'
-    if 'v-belt alternator' in nama_lower or 'v belt alternator' in nama_lower:
-        return 'V-BELT Alternator'
-    if 'v-belt (aksa)' in nama_lower or 'v belt aksa' in nama_lower:
-        return 'V-BELT (Aksa)'
-    if 'oli shell' in nama_lower or 'rimula' in nama_lower:
         if 'ibc' in nama_lower:
             return 'Oli Shell (IBC)'
         elif 'drum' in nama_lower:
