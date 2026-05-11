@@ -84,6 +84,22 @@ NORMALIZE_NAME = {
     'ACC-Y': 'ACCU 12V N150 YUASA',
 }
 
+# Urutan material untuk tampilan tabel
+URUTAN_MATERIAL = [
+    'LF3325', 'LF777', '2020PM V30-C', 'FS1006', 'WF2076',
+    '3629140', 'AF872', 'AF25278', 'AF25278 (Free)', 'AHO1135',
+    '5413003', '3015257', '5412990',
+    '5PK889 / 21-3107 / 25471145', '23PK2032 / 21-3110 / 25477108',
+    'RIMULA R4 X 15W-40', 'WCL'
+]
+
+# Semua PLTD (15 site)
+SEMUA_PLTD = [
+    'PEMARON', 'MANGOLI', 'TAYAN', 'TIMIKA', 'BOBONG',
+    'MERAWANG', 'AIR ANYIR', 'PADANG MANGGAR', 'KRUENG RAYA',
+    'LUENG BATA', 'ULEE KARENG', 'WAENA', 'SAMBELIA', 'TIMIKA 2', 'WAMENA'
+]
+
 def norm(kode, nama):
     k = str(kode).strip().upper()
     nama_lower = str(nama).strip().lower()
@@ -175,7 +191,7 @@ def load_all():
         df = df.groupby(['PLTD', 'Kode Material', 'Nama Material', 'Primary Code', 'Jenis'], as_index=False)['Qty'].sum()
     res['stock'] = df
 
-        # --- MASTER PLTD (HARDCODE KOLOM) ---
+    # --- MASTER PLTD (HARDCODE) ---
     try:
         sh = cl.open_by_key(MASTER_PLTD_ID)
         log.append(f"OK Master PLTD: {len(sh.worksheets())} sheet")
@@ -186,49 +202,34 @@ def load_all():
                     d = get_as_dataframe(ws, evaluate_formulas=True)
                     d.columns = [str(c).strip() for c in d.columns]
                     log.append(f"M1 columns ({len(d.columns)}): {list(d.columns)}")
-                    
-                    # HARDCODE: index 9=Nama PLTD, 2=Kode Material, 10=Keb PM, 11=Keb Aktual CF
                     if len(d.columns) >= 12:
                         pltd_name = d.columns[9]
                         kode_name = d.columns[2]
                         pm_name = d.columns[10]
                         aktual_name = d.columns[11]
                         log.append(f"HARDCODE: pltd={pltd_name}, kode={kode_name}, pm={pm_name}, aktual={aktual_name}")
-                        
-                        d = d.rename(columns={
-                            pltd_name: 'pltd',
-                            kode_name: 'kode_material',
-                            pm_name: 'keb_pm',
-                            aktual_name: 'keb_aktual'
-                        })
-                        
+                        d = d.rename(columns={pltd_name: 'pltd', kode_name: 'kode_material', pm_name: 'keb_pm', aktual_name: 'keb_aktual'})
                         d['pltd'] = d['pltd'].astype(str).str.strip().str.upper()
                         d['kode_material'] = d['kode_material'].astype(str).str.strip().str.upper()
                         d['primary_code'] = d['kode_material'].apply(get_primary_code)
                         d['keb_pm'] = pd.to_numeric(d['keb_pm'], errors='coerce').fillna(0)
                         d['keb_aktual'] = pd.to_numeric(d['keb_aktual'], errors='coerce').fillna(0)
-                        
                         res['m1'] = d
                         log.append(f"M1 OK: {len(d)} baris")
                         log.append(f"Sample aktual: {d['keb_aktual'].head(5).tolist()}")
-                        log.append(f"Sample pltd: {d['pltd'].head(5).tolist()}")
                     else:
                         log.append(f"ERR M1: kolom < 12 ({len(d.columns)})")
                 except Exception as e:
                     log.append(f"ERR M1: {str(e)[:120]}")
-            
             if ('master' in t or 'mater' in t) and '2' in t:
                 try:
                     d = get_as_dataframe(ws, evaluate_formulas=True)
                     d.columns = [str(c).strip() for c in d.columns]
                     pltd_c = next((c for c in d.columns if 'pltd' in c.lower()), None)
                     dur_c = next((c for c in d.columns if 'durasi' in c.lower()), None)
-                    if pltd_c:
-                        d = d.rename(columns={pltd_c: 'pltd'})
-                    if dur_c:
-                        d = d.rename(columns={dur_c: 'durasi_kirim'})
-                    if 'pltd' in d.columns:
-                        d['pltd'] = d['pltd'].astype(str).str.strip().str.upper()
+                    if pltd_c: d = d.rename(columns={pltd_c: 'pltd'})
+                    if dur_c: d = d.rename(columns={dur_c: 'durasi_kirim'})
+                    if 'pltd' in d.columns: d['pltd'] = d['pltd'].astype(str).str.strip().str.upper()
                     d['durasi_kirim'] = pd.to_numeric(d.get('durasi_kirim', 14), errors='coerce').fillna(14)
                     res['m2'] = d
                     log.append(f"M2 OK: {len(d)} baris")
@@ -331,10 +332,8 @@ def load_all():
 def hitung_sisa_bulan(df_stock, m1):
     if df_stock.empty or m1 is None:
         return pd.DataFrame()
-    
     if 'primary_code' not in m1.columns:
         m1['primary_code'] = m1['kode_material'].apply(get_primary_code)
-    
     m1_use = m1[['pltd', 'primary_code', 'keb_aktual']].copy()
     m1_use.columns = ['PLTD_M1', 'Primary_Code_M1', 'Keb_Aktual']
     m1_use['PLTD_M1'] = m1_use['PLTD_M1'].astype(str).str.strip().str.upper()
@@ -342,14 +341,11 @@ def hitung_sisa_bulan(df_stock, m1):
     m1_use['Keb_Aktual'] = pd.to_numeric(m1_use['Keb_Aktual'], errors='coerce').fillna(0)
     m1_use = m1_use[(m1_use['PLTD_M1'] != '') & (m1_use['Primary_Code_M1'] != '')]
     m1_use = m1_use.drop_duplicates(subset=['PLTD_M1', 'Primary_Code_M1'], keep='last')
-    
     stok = df_stock.copy()
     stok['PLTD'] = stok['PLTD'].astype(str).str.strip().str.upper()
     stok['Primary Code'] = stok['Primary Code'].astype(str).str.strip().str.upper()
     stok = stok.reset_index(drop=True)
-    
     merged = stok.merge(m1_use, left_on=['PLTD', 'Primary Code'], right_on=['PLTD_M1', 'Primary_Code_M1'], how='left')
-    
     mask_null = merged['Keb_Aktual'].isna() | (merged['Keb_Aktual'] == 0)
     if mask_null.any():
         m1_kode = m1[['pltd', 'kode_material', 'keb_aktual']].copy()
@@ -358,20 +354,16 @@ def hitung_sisa_bulan(df_stock, m1):
         m1_kode['Kode_M1'] = m1_kode['Kode_M1'].astype(str).str.strip().str.upper()
         m1_kode['Keb_Aktual_kode'] = pd.to_numeric(m1_kode['Keb_Aktual_kode'], errors='coerce').fillna(0)
         m1_kode = m1_kode.drop_duplicates(subset=['PLTD_M1', 'Kode_M1'], keep='last')
-        
         null_rows = merged[mask_null].drop(columns=['PLTD_M1', 'Primary_Code_M1', 'Keb_Aktual'], errors='ignore')
         null_fixed = null_rows.merge(m1_kode, left_on=['PLTD', 'Kode Material'], right_on=['PLTD_M1', 'Kode_M1'], how='left')
-        
         null_indices = merged.index[mask_null]
         for i, idx in enumerate(null_indices):
             if i < len(null_fixed):
                 new_val = null_fixed.iloc[i].get('Keb_Aktual_kode', 0)
                 if pd.notna(new_val) and new_val > 0:
                     merged.loc[idx, 'Keb_Aktual'] = new_val
-    
     merged['Keb_Aktual'] = pd.to_numeric(merged['Keb_Aktual'], errors='coerce').fillna(0)
     merged = merged.drop(columns=['PLTD_M1', 'Primary_Code_M1'], errors='ignore')
-    
     merged['Sisa_Bulan'] = np.where(merged['Keb_Aktual'] > 0, (merged['Qty'] / merged['Keb_Aktual']).round(1), 0.0)
     return merged
 
@@ -405,11 +397,9 @@ def page_stock():
     data = load_all()
     df = data['stock'].copy()
     debug_log = data.get('debug_log', [])
-    
     if df.empty:
         st.warning("Data belum tersedia.")
         return
-    
     cik = data['cik']
     if not cik.empty:
         df = df.merge(cik, on=['Kode Material', 'Nama Material', 'Primary Code'], how='left')
@@ -426,7 +416,7 @@ def page_stock():
                     st.warning(log)
                 else:
                     st.text(log)
-    
+
     st.sidebar.header("Filter Stok")
     sel_pltd = st.sidebar.multiselect("PLTD", sorted(df['PLTD'].unique()), default=[])
     sel_jenis = st.sidebar.multiselect("Jenis Material", ['Preventive', 'Corrective'], default=[])
@@ -435,14 +425,10 @@ def page_stock():
     highlight_only = st.sidebar.checkbox("🔴 Highlight hanya yang kritis (≤1.5 bulan)", value=False)
 
     f = df.copy()
-    if sel_pltd:
-        f = f[f['PLTD'].isin(sel_pltd)]
-    if sel_jenis:
-        f = f[f['Jenis'].isin(sel_jenis)]
-    if sel_nama:
-        f = f[f['Nama Material'].isin(sel_nama)]
-    if sel_kode:
-        f = f[f['Kode Material'].isin(sel_kode)]
+    if sel_pltd: f = f[f['PLTD'].isin(sel_pltd)]
+    if sel_jenis: f = f[f['Jenis'].isin(sel_jenis)]
+    if sel_nama: f = f[f['Nama Material'].isin(sel_nama)]
+    if sel_kode: f = f[f['Kode Material'].isin(sel_kode)]
 
     prev = f[f['Jenis'] == 'Preventive'].copy()
     corr = f[f['Jenis'] == 'Corrective'].copy()
@@ -469,62 +455,38 @@ def page_stock():
         if not sisa_df.empty:
             sp = sisa_df.pivot_table(index=['Kode Material', 'Nama Material'], columns='PLTD', values='Sisa_Bulan', aggfunc='first', fill_value=0.0)
             sp = sp.reset_index()
-            
-            # DAFTAR SEMUA PLTD (15 site)
-            SEMUA_PLTD = [
-                'PEMARON', 'MANGOLI', 'TAYAN', 'TIMIKA', 'BOBONG',
-                'MERAWANG', 'AIR ANYIR', 'PADANG MANGGAR', 'KRUENG RAYA',
-                'LUENG BATA', 'ULEE KARENG', 'WAENA', 'SAMBELIA', 'TIMIKA 2', 'WAMENA'
-            ]
-            
+            # Tambahkan semua PLTD sebagai kolom
             for pltd in SEMUA_PLTD:
                 if pltd not in sp.columns:
                     sp[pltd] = 0.0
-            
             pltd_cols_s = [p for p in SEMUA_PLTD if p in sp.columns]
             sp = sp[['Kode Material', 'Nama Material'] + pltd_cols_s]
-            
-            # URUTKAN material sesuai manual
-            URUTAN_MATERIAL = [
-                'LF3325', 'LF777', '2020PM V30-C', 'FS1006', 'WF2076',
-                '3629140', 'AF872', 'AF25278', 'AF25278 (Free)', 'AHO1135',
-                '5413003', '3015257', '5412990',
-                '5PK889 / 21-3107 / 25471145', '23PK2032 / 21-3110 / 25477108',
-                'RIMULA R4 X 15W-40', 'WCL'
-            ]
-            
+            # Urutkan material
             def urutkan(kode):
                 try:
                     return URUTAN_MATERIAL.index(kode)
                 except ValueError:
                     return 999
-            
             sp['_sort'] = sp['Kode Material'].apply(urutkan)
             sp = sp.sort_values('_sort').drop(columns=['_sort'])
-            
-            # Highlight
             if highlight_only:
                 mask = (sp[pltd_cols_s] > 0) & (sp[pltd_cols_s] <= 1.5)
                 sp = sp[mask.any(axis=1)]
-            
             cfg_s = {'Kode Material': st.column_config.TextColumn(pinned=True), 'Nama Material': st.column_config.TextColumn(pinned=True)}
             for col in pltd_cols_s:
                 cfg_s[col] = st.column_config.NumberColumn(format="%.1f")
-            
             def hl(val):
                 if isinstance(val, (int, float)) and val <= 1.5:
                     return 'background-color: #ffcccc; color: #cc0000; font-weight: bold;'
                 return ''
-            
             st.dataframe(sp.style.map(hl, subset=pltd_cols_s), column_config=cfg_s, use_container_width=True, hide_index=True)
-            
             with st.expander("🔍 Debug Sample Sisa Bulan"):
                 st.dataframe(sisa_df[['PLTD', 'Kode Material', 'Nama Material', 'Qty', 'Keb_Aktual', 'Sisa_Bulan']].head(30), use_container_width=True, hide_index=True)
         else:
             st.info("Data Sisa Bulan tidak tersedia.")
     else:
         st.info("Data tidak lengkap untuk menghitung Sisa Bulan.")
-        
+
     st.subheader("🟠 Material Corrective")
     if not corr.empty:
         p = corr.pivot_table(index=['Kode Material', 'Nama Material'], columns='PLTD', values='Qty', aggfunc='sum', fill_value=0)
@@ -683,26 +645,19 @@ def page_propose():
         prev = prev[prev['Status'].isin(sel_status)]
     st.subheader("⏳ Sisa Stok Preventive dalam Bulan")
     sp = prev.pivot_table(index=['Kode Material','Nama Material'], columns='PLTD', values='Sisa_Bulan', aggfunc='first', fill_value=0.0).reset_index()
-    pltd_cols_s = [c for c in sp.columns if c not in ('Kode Material','Nama Material')]
+    # Semua PLTD + urutan
+    for pltd in SEMUA_PLTD:
+        if pltd not in sp.columns:
+            sp[pltd] = 0.0
+    pltd_cols_s = [p for p in SEMUA_PLTD if p in sp.columns]
     sp = sp[['Kode Material','Nama Material'] + pltd_cols_s]
-                # URUTKAN material sesuai urutan di Excel manual kamu
-            URUTAN_MATERIAL = [
-                'LF3325', 'LF777', '2020PM V30-C', 'FS1006', 'WF2076',
-                '3629140', 'AF872', 'AF25278', 'AF25278 (Free)', 'AHO1135',
-                '5413003', '3015257', '5412990',
-                '5PK889 / 21-3107 / 25471145', '23PK2032 / 21-3110 / 25477108',
-                'RIMULA R4 X 15W-40', 'WCL'
-            ]
-            
-            # Buat kolom sorting
-            def urutkan(kode):
-                try:
-                    return URUTAN_MATERIAL.index(kode)
-                except ValueError:
-                    return 999  # material lain di bawah
-            
-            sp['_sort'] = sp['Kode Material'].apply(urutkan)
-            sp = sp.sort_values('_sort').drop(columns=['_sort'])
+    def urutkan(kode):
+        try:
+            return URUTAN_MATERIAL.index(kode)
+        except ValueError:
+            return 999
+    sp['_sort'] = sp['Kode Material'].apply(urutkan)
+    sp = sp.sort_values('_sort').drop(columns=['_sort'])
     cfg_s = {'Kode Material': st.column_config.TextColumn(pinned=True), 'Nama Material': st.column_config.TextColumn(pinned=True)}
     for col in pltd_cols_s:
         cfg_s[col] = st.column_config.NumberColumn(format="%.1f")
