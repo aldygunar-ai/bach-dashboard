@@ -49,36 +49,24 @@ MASTER_GABUNGAN_ID = '1aZZnnBjSybgzEgUECdLSCaPJ_rMKNHJmfGEwetOARbs'
 
 # ==================== PREVENTIVE MAPS ====================
 PREVENTIVE_MAP = {
-    'LF3325': 'Oil Filter',
-    'LF777': 'Oil Filter By pass',
-    '2020PM V30-C': 'Element Water Separator',
-    'FS1006': 'Fuel Filter',
-    'WF2076': 'Water Filter',
-    '3629140': 'Cylinder head cover gasket',
-    'AF872': 'Air Filter Element',
-    'AF25278': 'Air Filter Element',
-    'AF25278 (Free)': 'Air Filter Element',
-    'AHO1135': 'Air Filter Element (Aksa)',
-    '5413003': 'V-BELT Fan Radiator',
-    '3015257': 'V-BELT (Aksa)',
-    '5412990': 'V-BELT Alternator',
-    '5PK889': 'V-BELT Alternator',
-    '21-3107': 'V-BELT Alternator',
-    '25471145': 'V-BELT Alternator',
-    '23PK2032': 'V-BELT Fan Radiator',
-    '21-3110': 'V-BELT Fan Radiator',
-    '25477108': 'V-BELT Fan Radiator',
-    'RIMULA R4 X 15W-40': 'Oli Shell',
+    'LF3325': 'Oil Filter', 'LF777': 'Oil Filter By pass',
+    '2020PM V30-C': 'Element Water Separator', 'FS1006': 'Fuel Filter',
+    'WF2076': 'Water Filter', '3629140': 'Cylinder head cover gasket',
+    'AF872': 'Air Filter Element', 'AF25278': 'Air Filter Element',
+    'AF25278 (Free)': 'Air Filter Element', 'AHO1135': 'Air Filter Element (Aksa)',
+    '5413003': 'V-BELT Fan Radiator', '3015257': 'V-BELT (Aksa)',
+    '5412990': 'V-BELT Alternator', '5PK889': 'V-BELT Alternator',
+    '21-3107': 'V-BELT Alternator', '25471145': 'V-BELT Alternator',
+    '23PK2032': 'V-BELT Fan Radiator', '21-3110': 'V-BELT Fan Radiator',
+    '25477108': 'V-BELT Fan Radiator', 'RIMULA R4 X 15W-40': 'Oli Shell',
     'WCL': 'Coolant',
 }
 
 KNOWN_CODES = [
     'LF3325', 'LF777', '2020PM V30-C', 'FS1006', 'WF2076',
     '3629140', 'AF872', 'AF25278', 'AHO1135',
-    '5413003', '3015257', '5412990',
-    '5PK889', '21-3107', '25471145',
-    '23PK2032', '21-3110', '25477108',
-    'RIMULA R4 X 15W-40', 'WCL'
+    '5413003', '3015257', '5412990', '5PK889', '21-3107', '25471145',
+    '23PK2032', '21-3110', '25477108', 'RIMULA R4 X 15W-40', 'WCL'
 ]
 
 MULTI_VARIANT_MAP = {
@@ -87,10 +75,8 @@ MULTI_VARIANT_MAP = {
 }
 
 NORMALIZE_NAME = {
-    'AF25278': 'Air Filter Element',
-    'AF872': 'Air Filter Element',
-    'RIMULA R4 X 15W-40': 'Oli Shell',
-    'WCL': 'Coolant',
+    'AF25278': 'Air Filter Element', 'AF872': 'Air Filter Element',
+    'RIMULA R4 X 15W-40': 'Oli Shell', 'WCL': 'Coolant',
     'ACC-Y': 'ACCU 12V N150 YUASA',
 }
 
@@ -109,71 +95,50 @@ SEMUA_PLTD = [
 ]
 
 def extract_kode_from_product_id(product_id, nama_material):
-    """Ekstrak kode material simpel dari PRODUCT IDENTIFICATION."""
     pid = str(product_id).upper().strip()
     nama = str(nama_material).upper().strip()
     gabungan = pid + ' ' + nama
 
-    # ===== MAPPING KHUSUS: kode aneh -> kode simpel =====
     PID_TO_CODE = {
-        'DP.ELE.PAR.001----': '2020PM V30-C',      # Element Water Separator
-        'DP.FIL.FLE.001----': 'FS1006',             # Fuel Filter
-        'DP.CF.FLE.001----': 'WF2076',              # Water Filter
-        'DP.OIL.FLE.009----': 'LF777',              # Oil Filter By pass
-        'FS.SO.VDO.001----': None,                  # Switch Oil - skip
+        'DP.ELE.PAR.001----': '2020PM V30-C',
+        'DP.FIL.FLE.001----': 'FS1006',
+        'DP.CF.FLE.001----': 'WF2076',
+        'DP.OIL.FLE.009----': 'LF777',
+        'FS.SO.VDO.001----': None,
         'AKSESORIS PART, LOCTITE, NONE, 242, NONE': None,
         'AKSESORIS PART, LOCTITE, NONE, 5699, NONE': None,
         'ES.SKU.POL.068': None,
         'ASSET': None,
         'VARISTOR----': None,
     }
-    
     if pid in PID_TO_CODE:
-        mapped = PID_TO_CODE[pid]
-        if mapped is None:
-            return None  # Skip material ini
-        return mapped
-    
-    # ===== CARI KODE DI NAMA MATERIAL =====
-    # Contoh: "ELEMENT RACOR 2020PM PARKER" -> "2020PM V30-C"
-    # Contoh: "FILTER SEPARATOR FS 1006 FLEETGUARD" -> "FS1006"
+        return PID_TO_CODE[pid]
+
     KODE_DARI_NAMA = {
-        '2020PM': '2020PM V30-C',
-        'FS1006': 'FS1006',
-        'FS 1006': 'FS1006',
-        'WF2076': 'WF2076',
-        'LF777': 'LF777',
-        'LF3325': 'LF3325',
-        '5413003': '5413003',
-        '5412990': '5412990',
-        '3015257': '3015257',
-        '3629140': '3629140',
-        'AF872': 'AF872',
-        'AF25278': 'AF25278',
+        '2020PM': '2020PM V30-C', 'FS1006': 'FS1006', 'FS 1006': 'FS1006',
+        'WF2076': 'WF2076', 'LF777': 'LF777', 'LF3325': 'LF3325',
+        '5413003': '5413003', '5412990': '5412990', '3015257': '3015257',
+        '3629140': '3629140', 'AF872': 'AF872', 'AF25278': 'AF25278',
         'AHO1135': 'AHO1135',
     }
-    
     nama_upper = nama.upper()
     for key, value in KODE_DARI_NAMA.items():
         if key in nama_upper:
             return value
-    
-    # ===== CARI KODE DI PRODUCT ID + NAMA =====
+
     for kode in KNOWN_CODES:
         pattern = r'(?:^|[-/\s])' + re2.escape(kode) + r'(?:$|[-/\s])'
         if re2.search(pattern, gabungan):
             return kode
-    
-    # ===== CARI KATA DI NAMA =====
+
     words = nama_upper.split()
     for word in words:
         word_clean = word.strip('()-.,')
         if word_clean in KNOWN_CODES:
             return word_clean
-    
-    # Fallback terakhir
+
     return product_id
-    
+
 def norm(kode, nama):
     k = str(kode).strip().upper()
     nama_lower = str(nama).strip().lower()
@@ -197,6 +162,8 @@ def norm(kode, nama):
         elif 'ibc' in nama_lower or '1000' in nama_lower:
             return 'Oli Shell (IBC)'
         return 'Oli Shell'
+    if 'coolant' in nama_lower or 'wcl' in k.lower():
+        return 'Coolant'
     return nama
 
 def get_primary_code(kode):
@@ -220,7 +187,6 @@ def is_valid(kode, nama):
         return False
     return True
 
-# ==================== GSPREAD ====================
 @st.cache_resource
 def get_client():
     c = dict(st.secrets["gcp_service_account"])
@@ -228,14 +194,12 @@ def get_client():
         c['private_key'] = c['private_key'].replace('\\n', '\n')
     return gspread.service_account_from_dict(c)
 
-# ==================== LOAD ALL ====================
 @st.cache_data(ttl=600)
 def load_all():
     cl = get_client()
     res = {'stock': pd.DataFrame(), 'm1': None, 'm2': None, 'cik': pd.DataFrame(), 'pemakaian': pd.DataFrame(), 'debug_log': []}
     log = []
 
-    # --- STOK PLTD ---
     rows = []
     for pltd, sid in PLTD_SHEETS.items():
         try:
@@ -245,58 +209,22 @@ def load_all():
             if len(data) < 2:
                 continue
 
-                        # DETEKSI FORMAT: stok, log transaksi, atau format Padang Manggar
             header = [str(c).strip().lower() for c in data[0]] if data else []
             is_format_log = ('keluar' in ' '.join(header[:5]) and 'masuk' in ' '.join(header[:5]))
-            
-            # Deteksi format Padang Manggar: header kosong, kolom D = "Nama Matrial"
+
+            # Deteksi format Padang Manggar
             is_format_padang = False
-            if len(data) >= 3:
+            if not is_format_log and len(data) >= 3:
                 row2_kolom_d = str(data[1][3]).strip().lower() if len(data[1]) > 3 else ''
                 row2_kolom_c = str(data[1][2]).strip().lower() if len(data[1]) > 2 else ''
                 if row2_kolom_c == 'no' and 'matrial' in row2_kolom_d:
                     is_format_padang = True
 
             if is_format_log:
-                if is_format_padang:
-                log.append(f"  -> Format PADANG MANGGAR terdeteksi")
-                i_nama = 3   # Kolom D = Nama Material
-                i_qty = 10   # Kolom K = Qty
-                
-                material_stok = {}
-                for r in data[2:]:  # Skip 2 baris header
-                    if len(r) <= max(i_nama, i_qty):
-                        continue
-                    nama = r[i_nama].strip() if i_nama < len(r) else ''
-                    qty_s = r[i_qty].strip() if i_qty < len(r) else '0'
-                    
-                    if not nama:
-                        continue
-                    if '#REF' in qty_s.upper() or '#N/A' in qty_s.upper():
-                        continue
-                    
-                    try:
-                        qty = float(qty_s.replace(',', '')) if qty_s else 0.0
-                    except:
-                        qty = 0.0
-                    
-                    key = nama.strip().lower()
-                    # Coba dapatkan kode dari nama material
-                    kode = extract_kode_from_product_id(nama, nama)
-                    if kode is None:
-                        continue
-                    material_stok[key] = (kode, qty)
-                
-                ok = 0
-                for key, (kode, qty) in material_stok.items():
-                    rows.append((pltd.strip().upper(), kode, norm(kode, key).strip(), qty, get_primary_code(kode)))
-                    ok += 1
-                log.append(f"  -> {ok} material unik (format Padang)")
                 log.append(f"  -> Format LOG terdeteksi")
                 i_nama = 8
                 i_kode = 10
                 i_qty = 3
-
                 material_stok = {}
                 for r in data[1:]:
                     if len(r) <= max(i_nama, i_kode, i_qty):
@@ -304,28 +232,53 @@ def load_all():
                     nama = r[i_nama].strip() if i_nama < len(r) else ''
                     product_id = r[i_kode].strip() if i_kode < len(r) else ''
                     qty_s = r[i_qty].strip() if i_qty < len(r) else '0'
-
                     if not nama:
                         continue
                     if '#REF' in qty_s.upper() or '#N/A' in qty_s.upper():
                         continue
-
                     try:
                         qty = float(qty_s.replace(',', '')) if qty_s else 0.0
                     except:
                         qty = 0.0
-
                     kode = extract_kode_from_product_id(product_id, nama)
                     if kode is None:
-                        continue  # Skip material yang tidak dikenal
+                        continue
                     key = (nama.strip().lower(), kode.strip().upper())
                     material_stok[key] = qty
-                    
                 ok = 0
                 for (nama_lower, kode), qty in material_stok.items():
                     rows.append((pltd.strip().upper(), kode, norm(kode, nama_lower).strip(), qty, get_primary_code(kode)))
                     ok += 1
                 log.append(f"  -> {ok} material unik (format LOG)")
+
+            elif is_format_padang:
+                log.append(f"  -> Format PADANG MANGGAR terdeteksi")
+                i_nama = 3
+                i_qty = 10
+                material_stok = {}
+                for r in data[2:]:
+                    if len(r) <= max(i_nama, i_qty):
+                        continue
+                    nama = r[i_nama].strip() if i_nama < len(r) else ''
+                    qty_s = r[i_qty].strip() if i_qty < len(r) else '0'
+                    if not nama:
+                        continue
+                    if '#REF' in qty_s.upper() or '#N/A' in qty_s.upper():
+                        continue
+                    try:
+                        qty = float(qty_s.replace(',', '')) if qty_s else 0.0
+                    except:
+                        qty = 0.0
+                    kode = extract_kode_from_product_id(nama, nama)
+                    if kode is None:
+                        continue
+                    key = (nama.strip().lower(), kode.strip().upper())
+                    material_stok[key] = qty
+                ok = 0
+                for (nama_lower, kode), qty in material_stok.items():
+                    rows.append((pltd.strip().upper(), kode, norm(kode, nama_lower).strip(), qty, get_primary_code(kode)))
+                    ok += 1
+                log.append(f"  -> {ok} material unik (format Padang)")
 
             else:
                 ok = 0
@@ -356,7 +309,7 @@ def load_all():
         df = df.groupby(['PLTD', 'Kode Material', 'Nama Material', 'Primary Code', 'Jenis'], as_index=False)['Qty'].sum()
     res['stock'] = df
 
-    # --- MASTER PLTD (HARDCODE) ---
+    # --- MASTER PLTD ---
     try:
         sh = cl.open_by_key(MASTER_PLTD_ID)
         log.append(f"OK Master PLTD: {len(sh.worksheets())} sheet")
@@ -366,14 +319,8 @@ def load_all():
                 try:
                     d = get_as_dataframe(ws, evaluate_formulas=True)
                     d.columns = [str(c).strip() for c in d.columns]
-                    log.append(f"M1 columns ({len(d.columns)}): {list(d.columns)}")
                     if len(d.columns) >= 12:
-                        pltd_name = d.columns[9]
-                        kode_name = d.columns[2]
-                        pm_name = d.columns[10]
-                        aktual_name = d.columns[11]
-                        log.append(f"HARDCODE: pltd={pltd_name}, kode={kode_name}, pm={pm_name}, aktual={aktual_name}")
-                        d = d.rename(columns={pltd_name: 'pltd', kode_name: 'kode_material', pm_name: 'keb_pm', aktual_name: 'keb_aktual'})
+                        d = d.rename(columns={d.columns[9]: 'pltd', d.columns[2]: 'kode_material', d.columns[10]: 'keb_pm', d.columns[11]: 'keb_aktual'})
                         d['pltd'] = d['pltd'].astype(str).str.strip().str.upper()
                         d['kode_material'] = d['kode_material'].astype(str).str.strip().str.upper()
                         d['primary_code'] = d['kode_material'].apply(get_primary_code)
@@ -381,9 +328,6 @@ def load_all():
                         d['keb_aktual'] = pd.to_numeric(d['keb_aktual'], errors='coerce').fillna(0)
                         res['m1'] = d
                         log.append(f"M1 OK: {len(d)} baris")
-                        log.append(f"Sample aktual: {d['keb_aktual'].head(5).tolist()}")
-                    else:
-                        log.append(f"ERR M1: kolom < 12 ({len(d.columns)})")
                 except Exception as e:
                     log.append(f"ERR M1: {str(e)[:120]}")
             if ('master' in t or 'mater' in t) and '2' in t:
@@ -411,16 +355,14 @@ def load_all():
         hrow = 0
         for i, row in enumerate(data[:5]):
             if 'cikande' in ' '.join([str(c).lower() for c in row]):
-                hrow = i
-                break
+                hrow = i; break
         header = [str(c).strip().lower() for c in data[hrow]]
         i_nama = next((i for i, h in enumerate(header) if 'nama' in h or 'material' in h), 0)
         i_kode = next((i for i, h in enumerate(header) if 'kode' in h or 'seri' in h), 1)
         i_qty = next((i for i, h in enumerate(header) if 'cikande' in h), 2)
         crows = []
         for r in data[hrow + 1:]:
-            if len(r) <= max(i_nama, i_kode, i_qty):
-                continue
+            if len(r) <= max(i_nama, i_kode, i_qty): continue
             nama = r[i_nama].strip() if i_nama < len(r) else ''
             kode = r[i_kode].strip() if i_kode < len(r) else ''
             qty_s = r[i_qty].strip() if i_qty < len(r) else '0'
@@ -447,14 +389,11 @@ def load_all():
             header_row = None
             for i, row in enumerate(data[:10]):
                 if 'tanggal' in ' '.join([str(c).lower() for c in row]) and 'nama' in ' '.join([str(c).lower() for c in row]):
-                    header_row = i
-                    break
-            if header_row is None:
-                header_row = 2
+                    header_row = i; break
+            if header_row is None: header_row = 2
             p_rows = []
             for r in data[header_row + 1:]:
-                if len(r) < 2 or not any(str(c).strip() for c in r[:5]):
-                    continue
+                if len(r) < 2 or not any(str(c).strip() for c in r[:5]): continue
                 tanggal = r[0].strip() if len(r) > 0 else ''
                 masuk = r[1].strip() if len(r) > 1 else '0'
                 keluar = r[2].strip() if len(r) > 2 else '0'
@@ -470,21 +409,15 @@ def load_all():
                         m = float(masuk.replace(',', '')) if masuk else 0.0
                         k = float(keluar.replace(',', '')) if keluar else 0.0
                         s = float(stok_s.replace(',', '')) if stok_s else 0.0
-                    except:
-                        m = k = s = 0.0
+                    except: m = k = s = 0.0
                     try:
-                        if '.' in harga_raw and ',' not in harga_raw:
-                            h = float(harga_raw.replace('.', ''))
-                        elif ',' in harga_raw:
-                            h = float(harga_raw.replace(',', '.'))
-                        else:
-                            h = float(harga_raw)
-                    except:
-                        h = 0.0
+                        if '.' in harga_raw and ',' not in harga_raw: h = float(harga_raw.replace('.', ''))
+                        elif ',' in harga_raw: h = float(harga_raw.replace(',', '.'))
+                        else: h = float(harga_raw)
+                    except: h = 0.0
                     p_rows.append({'Tanggal': tanggal, 'Nama Material': nama_material, 'Masuk': m, 'Keluar': k, 'Stok': s, 'Gudang': gudang, 'Keterangan': keterangan, 'Transaksi': transaksi, 'JobType': jobtype, 'HARGA_D365': h, 'TOTAL_COST': k * h})
             df_p = pd.DataFrame(p_rows)
-            if not df_p.empty:
-                df_p['Tanggal'] = pd.to_datetime(df_p['Tanggal'], errors='coerce')
+            if not df_p.empty: df_p['Tanggal'] = pd.to_datetime(df_p['Tanggal'], errors='coerce')
             res['pemakaian'] = df_p
             log.append(f"OK Gabungan: {len(df_p)} baris")
     except Exception as e:
@@ -493,12 +426,9 @@ def load_all():
     res['debug_log'] = log
     return res
 
-# ==================== HITUNG SISA BULAN ====================
 def hitung_sisa_bulan(df_stock, m1):
-    if df_stock.empty or m1 is None:
-        return pd.DataFrame()
-    if 'primary_code' not in m1.columns:
-        m1['primary_code'] = m1['kode_material'].apply(get_primary_code)
+    if df_stock.empty or m1 is None: return pd.DataFrame()
+    if 'primary_code' not in m1.columns: m1['primary_code'] = m1['kode_material'].apply(get_primary_code)
     m1_use = m1[['pltd', 'primary_code', 'keb_aktual']].copy()
     m1_use.columns = ['PLTD_M1', 'Primary_Code_M1', 'Keb_Aktual']
     m1_use['PLTD_M1'] = m1_use['PLTD_M1'].astype(str).str.strip().str.upper()
@@ -525,25 +455,21 @@ def hitung_sisa_bulan(df_stock, m1):
         for i, idx in enumerate(null_indices):
             if i < len(null_fixed):
                 new_val = null_fixed.iloc[i].get('Keb_Aktual_kode', 0)
-                if pd.notna(new_val) and new_val > 0:
-                    merged.loc[idx, 'Keb_Aktual'] = new_val
+                if pd.notna(new_val) and new_val > 0: merged.loc[idx, 'Keb_Aktual'] = new_val
     merged['Keb_Aktual'] = pd.to_numeric(merged['Keb_Aktual'], errors='coerce').fillna(0)
     merged = merged.drop(columns=['PLTD_M1', 'Primary_Code_M1'], errors='ignore')
     merged['Sisa_Bulan'] = np.where(merged['Keb_Aktual'] > 0, (merged['Qty'] / merged['Keb_Aktual']).round(1), 0.0)
     return merged
 
-# ==================== HOME ====================
 def home():
     st.title("⚡ Dashboard Stok & Logistik PLTD")
     data = load_all()
     df = data.get('stock', pd.DataFrame())
-    if df.empty:
-        st.warning("Data belum tersedia.")
-        return
+    if df.empty: st.warning("Data belum tersedia."); return
     c1, c2, c3 = st.columns(3)
     c1.metric("PLTD", df['PLTD'].nunique())
     c2.metric("Total Stok", f"{df['Qty'].sum():,.0f}")
-    c3.metric("Prev / Corr", f"{(df['Jenis'] == 'Preventive').sum()} / {(df['Jenis'] == 'Corrective').sum()}")
+    c3.metric("Prev / Corr", f"{(df['Jenis']=='Preventive').sum()} / {(df['Jenis']=='Corrective').sum()}")
     coords = {
         'PEMARON': (-8.16, 114.68), 'MANGOLI': (-1.88, 125.37), 'TAYAN': (-0.03, 110.10),
         'TIMIKA': (-4.56, 136.89), 'BOBONG': (-1.95, 124.39), 'MERAWANG': (-1.95, 105.96),
@@ -556,31 +482,24 @@ def home():
     loc['lon'] = loc['PLTD'].map(lambda x: coords.get(x, (None, None))[1])
     st.map(loc.dropna(subset=['lat']), latitude='lat', longitude='lon', zoom=4, height=350)
 
-# ==================== PAGE STOCK ====================
 def page_stock():
     st.title("📦 Stok Material PLTD")
     data = load_all()
     df = data['stock'].copy()
     debug_log = data.get('debug_log', [])
-    if df.empty:
-        st.warning("Data belum tersedia.")
-        return
+    if df.empty: st.warning("Data belum tersedia."); return
     cik = data['cik']
     if not cik.empty:
         df = df.merge(cik, on=['Kode Material', 'Nama Material', 'Primary Code'], how='left')
         df['WH Cikande'] = df['WH Cikande'].fillna(0)
-    else:
-        df['WH Cikande'] = 0.0
+    else: df['WH Cikande'] = 0.0
 
     with st.sidebar:
         with st.expander("🔧 DEBUG INFO", expanded=False):
             for log in debug_log:
-                if 'ERR' in log:
-                    st.error(log)
-                elif 'WARN' in log:
-                    st.warning(log)
-                else:
-                    st.text(log)
+                if 'ERR' in log: st.error(log)
+                elif 'WARN' in log: st.warning(log)
+                else: st.text(log)
 
     st.sidebar.header("Filter Stok")
     sel_pltd = st.sidebar.multiselect("PLTD", sorted(df['PLTD'].unique()), default=[])
@@ -594,91 +513,71 @@ def page_stock():
     if sel_jenis: f = f[f['Jenis'].isin(sel_jenis)]
     if sel_nama: f = f[f['Nama Material'].isin(sel_nama)]
     if sel_kode: f = f[f['Kode Material'].isin(sel_kode)]
-
-    prev = f[f['Jenis'] == 'Preventive'].copy()
-    corr = f[f['Jenis'] == 'Corrective'].copy()
+    prev = f[f['Jenis']=='Preventive'].copy()
+    corr = f[f['Jenis']=='Corrective'].copy()
     m1 = data['m1']
 
     st.subheader("🔵 Material Preventive")
     if not prev.empty:
-        p = prev.pivot_table(index=['Kode Material', 'Nama Material'], columns='PLTD', values='Qty', aggfunc='sum', fill_value=0)
-        p = p.round(0).astype(int)
-        cik_p = prev.groupby(['Kode Material', 'Nama Material'])['WH Cikande'].max().round(0).astype(int)
+        p = prev.pivot_table(index=['Kode Material','Nama Material'], columns='PLTD', values='Qty', aggfunc='sum', fill_value=0).round(0).astype(int)
+        cik_p = prev.groupby(['Kode Material','Nama Material'])['WH Cikande'].max().round(0).astype(int)
         p = p.join(cik_p)
         p['Total'] = p.drop(columns='WH Cikande').sum(axis=1)
         p = p.reset_index()
-        pltd_cols = [c for c in p.columns if c not in ('Kode Material', 'Nama Material', 'WH Cikande', 'Total')]
-        p = p[['Kode Material', 'Nama Material'] + pltd_cols + ['WH Cikande', 'Total']]
-        cfg = {'Kode Material': st.column_config.TextColumn(pinned=True), 'Nama Material': st.column_config.TextColumn(pinned=True)}
-        st.dataframe(p, column_config=cfg, use_container_width=True, hide_index=True)
-    else:
-        st.info("Tidak ada data Preventive.")
+        pltd_cols = [c for c in p.columns if c not in ('Kode Material','Nama Material','WH Cikande','Total')]
+        p = p[['Kode Material','Nama Material'] + pltd_cols + ['WH Cikande','Total']]
+        st.dataframe(p, column_config={'Kode Material': st.column_config.TextColumn(pinned=True), 'Nama Material': st.column_config.TextColumn(pinned=True)}, use_container_width=True, hide_index=True)
+    else: st.info("Tidak ada data Preventive.")
 
     st.subheader("⏳ Sisa Stok Preventive dalam Bulan")
     if not prev.empty and m1 is not None:
         sisa_df = hitung_sisa_bulan(prev, m1)
         if not sisa_df.empty:
-            sp = sisa_df.pivot_table(index=['Kode Material', 'Nama Material'], columns='PLTD', values='Sisa_Bulan', aggfunc='first', fill_value=0.0)
-            sp = sp.reset_index()
+            sp = sisa_df.pivot_table(index=['Kode Material','Nama Material'], columns='PLTD', values='Sisa_Bulan', aggfunc='first', fill_value=0.0).reset_index()
             for pltd in SEMUA_PLTD:
-                if pltd not in sp.columns:
-                    sp[pltd] = 0.0
+                if pltd not in sp.columns: sp[pltd] = 0.0
             pltd_cols_s = [p for p in SEMUA_PLTD if p in sp.columns]
-            sp = sp[['Kode Material', 'Nama Material'] + pltd_cols_s]
+            sp = sp[['Kode Material','Nama Material'] + pltd_cols_s]
             def urutkan(kode):
-                try:
-                    return URUTAN_MATERIAL.index(kode)
-                except ValueError:
-                    return 999
+                try: return URUTAN_MATERIAL.index(kode)
+                except ValueError: return 999
             sp['_sort'] = sp['Kode Material'].apply(urutkan)
             sp = sp.sort_values('_sort').drop(columns=['_sort'])
             if highlight_only:
                 mask = (sp[pltd_cols_s] > 0) & (sp[pltd_cols_s] <= 1.5)
                 sp = sp[mask.any(axis=1)]
             cfg_s = {'Kode Material': st.column_config.TextColumn(pinned=True), 'Nama Material': st.column_config.TextColumn(pinned=True)}
-            for col in pltd_cols_s:
-                cfg_s[col] = st.column_config.NumberColumn(format="%.1f")
+            for col in pltd_cols_s: cfg_s[col] = st.column_config.NumberColumn(format="%.1f")
             def hl(val):
-                if isinstance(val, (int, float)) and val <= 1.5:
-                    return 'background-color: #ffcccc; color: #cc0000; font-weight: bold;'
+                if isinstance(val, (int, float)) and val <= 1.5: return 'background-color: #ffcccc; color: #cc0000; font-weight: bold;'
                 return ''
             st.dataframe(sp.style.map(hl, subset=pltd_cols_s), column_config=cfg_s, use_container_width=True, hide_index=True)
             with st.expander("🔍 Debug Sample Sisa Bulan"):
-                st.dataframe(sisa_df[['PLTD', 'Kode Material', 'Nama Material', 'Qty', 'Keb_Aktual', 'Sisa_Bulan']].head(30), use_container_width=True, hide_index=True)
-        else:
-            st.info("Data Sisa Bulan tidak tersedia.")
-    else:
-        st.info("Data tidak lengkap untuk menghitung Sisa Bulan.")
+                st.dataframe(sisa_df[['PLTD','Kode Material','Nama Material','Qty','Keb_Aktual','Sisa_Bulan']].head(30), use_container_width=True, hide_index=True)
+        else: st.info("Data Sisa Bulan tidak tersedia.")
+    else: st.info("Data tidak lengkap.")
 
     st.subheader("🟠 Material Corrective")
     if not corr.empty:
-        p = corr.pivot_table(index=['Kode Material', 'Nama Material'], columns='PLTD', values='Qty', aggfunc='sum', fill_value=0)
-        p = p.round(0).astype(int)
-        cik_c = corr.groupby(['Kode Material', 'Nama Material'])['WH Cikande'].max().round(0).astype(int)
+        p = corr.pivot_table(index=['Kode Material','Nama Material'], columns='PLTD', values='Qty', aggfunc='sum', fill_value=0).round(0).astype(int)
+        cik_c = corr.groupby(['Kode Material','Nama Material'])['WH Cikande'].max().round(0).astype(int)
         p = p.join(cik_c)
         p['Total'] = p.drop(columns='WH Cikande').sum(axis=1)
         p = p.reset_index()
-        pltd_cols = [c for c in p.columns if c not in ('Kode Material', 'Nama Material', 'WH Cikande', 'Total')]
-        p = p[['Kode Material', 'Nama Material'] + pltd_cols + ['WH Cikande', 'Total']]
-        cfg = {'Kode Material': st.column_config.TextColumn(pinned=True), 'Nama Material': st.column_config.TextColumn(pinned=True)}
-        st.dataframe(p, column_config=cfg, use_container_width=True, hide_index=True)
-    else:
-        st.info("Tidak ada data Corrective.")
+        pltd_cols = [c for c in p.columns if c not in ('Kode Material','Nama Material','WH Cikande','Total')]
+        p = p[['Kode Material','Nama Material'] + pltd_cols + ['WH Cikande','Total']]
+        st.dataframe(p, column_config={'Kode Material': st.column_config.TextColumn(pinned=True), 'Nama Material': st.column_config.TextColumn(pinned=True)}, use_container_width=True, hide_index=True)
+    else: st.info("Tidak ada data Corrective.")
 
-# ==================== PAGE ANALISIS ====================
 def page_analisis():
     st.title("📊 Analisis Pemakaian Material")
     data = load_all()
     df_pakai = data.get('pemakaian', pd.DataFrame()).copy()
-    if df_pakai.empty:
-        st.warning("Data pemakaian belum tersedia.")
-        return
+    if df_pakai.empty: st.warning("Data pemakaian belum tersedia."); return
     nama_map = {
         'water coollant reco-cool - drum': 'WATER COOLLANT RECO-COOL',
-        'filter udara af872': 'FILTER UDARA AF872',
-        'air filter element af872': 'FILTER UDARA AF872',
-        'element racor 2020pm parker': 'ELEMENT RACOR 2020PM',
-        'oil filter lf777 fleet gruad': 'OIL FILTER LF777',
+        'filter udara af872': 'FILTER UDARA AF872', 'air filter element af872': 'FILTER UDARA AF872',
+        'element racor 2020pm parker': 'ELEMENT RACOR 2020PM', 'oil filter lf777 fleet gruad': 'OIL FILTER LF777',
         'coolant filter wf2076 fleetguard': 'COOLANT FILTER WF2076',
         'oil shell rimula r3mv 15w-40 (drum @ 209 ltr)': 'OIL SHELL RIMULA R3MV',
         'oli rimula r4 x 15w-40 (ibc @ 1000 liter)': 'OLI RIMULA R4 (IBC)',
@@ -686,12 +585,11 @@ def page_analisis():
         'oil filter lf3325 fleetguard': 'OIL FILTER LF3325',
     }
     df_pakai['Nama Material'] = df_pakai['Nama Material'].str.strip().str.lower().apply(lambda x: nama_map.get(x, x.upper()))
-    for c in ['Masuk', 'Keluar', 'Stok', 'TOTAL_COST']:
-        if c in df_pakai.columns:
-            df_pakai[c] = pd.to_numeric(df_pakai[c], errors='coerce').fillna(0)
+    for c in ['Masuk','Keluar','Stok','TOTAL_COST']:
+        if c in df_pakai.columns: df_pakai[c] = pd.to_numeric(df_pakai[c], errors='coerce').fillna(0)
     if 'Tanggal' in df_pakai.columns:
         df_pakai['Tanggal'] = pd.to_datetime(df_pakai['Tanggal'], errors='coerce')
-        df_pakai['Tahun'] = df_pakai['Tanggal'].dt.year.astype('Int64').astype(str).replace('<NA>', '')
+        df_pakai['Tahun'] = df_pakai['Tanggal'].dt.year.astype('Int64').astype(str).replace('<NA>','')
         bln = {1:'Jan',2:'Feb',3:'Mar',4:'Apr',5:'Mei',6:'Jun',7:'Jul',8:'Ags',9:'Sep',10:'Okt',11:'Nov',12:'Des'}
         df_pakai['Periode'] = df_pakai['Tanggal'].dt.month.map(bln).fillna('')
         df_pakai['BulanStr'] = df_pakai['Tanggal'].dt.strftime('%Y-%m').replace('NaT','')
@@ -710,10 +608,8 @@ def page_analisis():
     pc = pc[pc['TOTAL_COST'] > 0]
     gt = pc['TOTAL_COST'].sum()
     k1,k2,k3,k4 = st.columns(4)
-    k1.metric("Total Transaksi", len(f))
-    k2.metric("Total Keluar", f"{pc['Keluar'].sum():,.0f}")
-    k3.metric("Material Unik", len(pc))
-    k4.metric("💰 Grand Total Cost", f"Rp {gt:,.0f}")
+    k1.metric("Total Transaksi", len(f)); k2.metric("Total Keluar", f"{pc['Keluar'].sum():,.0f}")
+    k3.metric("Material Unik", len(pc)); k4.metric("💰 Grand Total Cost", f"Rp {gt:,.0f}")
     st.markdown("---")
     st.subheader("📈 Tren Pemakaian")
     trend = f[f['BulanStr']!=''].groupby('BulanStr').agg(Masuk=('Masuk','sum'),Keluar=('Keluar','sum')).reset_index().sort_values('BulanStr')
@@ -745,26 +641,19 @@ def page_analisis():
     st.subheader("📋 Detail Pemakaian")
     cols = ['Tanggal','Nama Material','Masuk','Keluar','Stok','Gudang','Keterangan','Transaksi','JobType','TOTAL_COST']
     cols = [c for c in cols if c in f.columns]
-    if 'Tanggal' in f.columns:
-        f = f.sort_values('Tanggal', ascending=False)
+    if 'Tanggal' in f.columns: f = f.sort_values('Tanggal', ascending=False)
     st.dataframe(f[cols], use_container_width=True, hide_index=True, height=400)
 
-# ==================== PAGE PROPOSE ====================
 def page_propose():
     st.title("📦 Propose Order Material")
     st.markdown("*Analisis stok vs kebutuhan untuk perencanaan pengadaan*")
     data = load_all()
     df_stock = data.get('stock', pd.DataFrame()).copy()
     m1 = data.get('m1')
-    if df_stock.empty or m1 is None:
-        st.warning("Data stok atau Master Data 1 tidak tersedia.")
-        return
+    if df_stock.empty or m1 is None: st.warning("Data stok atau Master Data 1 tidak tersedia."); return
     sisa_df = hitung_sisa_bulan(df_stock[df_stock['Jenis']=='Preventive'], m1)
-    if sisa_df.empty:
-        st.warning("Data Sisa Bulan tidak tersedia.")
-        return
-    if 'primary_code' not in m1.columns:
-        m1['primary_code'] = m1['kode_material'].apply(get_primary_code)
+    if sisa_df.empty: st.warning("Data Sisa Bulan tidak tersedia."); return
+    if 'primary_code' not in m1.columns: m1['primary_code'] = m1['kode_material'].apply(get_primary_code)
     m1_pm = m1[['primary_code','keb_pm']].copy()
     m1_pm.columns = ['Primary Code','Keb_PM']
     m1_pm['Primary Code'] = m1_pm['Primary Code'].astype(str).str.strip().str.upper()
@@ -780,112 +669,68 @@ def page_propose():
         m1_miss = m1[m1['pltd'].str.strip().str.upper().isin(pltd_missing)].copy()
         miss_rows = []
         for _, row in m1_miss.iterrows():
-            pc = str(row.get('primary_code', '')).strip().upper()
-            miss_rows.append({
-                'PLTD': row['pltd'].strip().upper(),
-                'Kode Material': row.get('kode_material', pc),
-                'Nama Material': PREVENTIVE_MAP.get(pc, 'Unknown'),
-                'Primary Code': pc,
-                'Qty': 0,
-                'Jenis': 'Preventive',
-                'Keb_Aktual': pd.to_numeric(row.get('keb_aktual',0),errors='coerce') or 0,
-                'Keb_PM': pd.to_numeric(row.get('keb_pm',0),errors='coerce') or 0,
-                'Sisa_Bulan': 0.0
-            })
-        if miss_rows:
-            sisa_df = pd.concat([sisa_df, pd.DataFrame(miss_rows)], ignore_index=True)
+            pc = str(row.get('primary_code','')).strip().upper()
+            miss_rows.append({'PLTD': row['pltd'].strip().upper(), 'Kode Material': row.get('kode_material',pc), 'Nama Material': PREVENTIVE_MAP.get(pc,'Unknown'), 'Primary Code': pc, 'Qty': 0, 'Jenis': 'Preventive', 'Keb_Aktual': pd.to_numeric(row.get('keb_aktual',0),errors='coerce') or 0, 'Keb_PM': pd.to_numeric(row.get('keb_pm',0),errors='coerce') or 0, 'Sisa_Bulan': 0.0})
+        if miss_rows: sisa_df = pd.concat([sisa_df, pd.DataFrame(miss_rows)], ignore_index=True)
     for c in ['Qty','Keb_PM','Keb_Aktual']:
-        if c in sisa_df.columns:
-            sisa_df[c] = pd.to_numeric(sisa_df[c], errors='coerce').fillna(0)
+        if c in sisa_df.columns: sisa_df[c] = pd.to_numeric(sisa_df[c], errors='coerce').fillna(0)
 
     st.sidebar.header("🎯 Filter Propose")
     sel_pltd = st.sidebar.multiselect("📍 PLTD", sorted(sisa_df['PLTD'].unique()), default=[])
     jb = st.sidebar.slider("📅 Jumlah Bulan Order", 1, 12, 3, 1)
     sel_status = st.sidebar.multiselect("📊 Status", ['🔴 Urgent','🟠 Warning','🟡 Perlu Order','🟢 Aman'], default=[])
-
     prev = sisa_df.copy()
-    if sel_pltd:
-        prev = prev[prev['PLTD'].isin(sel_pltd)]
+    if sel_pltd: prev = prev[prev['PLTD'].isin(sel_pltd)]
     prev['Keb_N_Bulan'] = prev['Keb_Aktual'] * jb
     prev['Propose_N_Bulan'] = np.ceil(np.maximum(0, prev['Keb_N_Bulan'] - prev['Qty']))
-
     def sts(row):
-        if row['Keb_Aktual'] <= 0:
-            return '⚪ No Data'
-        if row['Qty'] >= row['Keb_N_Bulan']:
-            return '🟢 Aman'
-        if row['Sisa_Bulan'] < 1:
-            return '🔴 Urgent'
-        if row['Sisa_Bulan'] < 2:
-            return '🟠 Warning'
+        if row['Keb_Aktual'] <= 0: return '⚪ No Data'
+        if row['Qty'] >= row['Keb_N_Bulan']: return '🟢 Aman'
+        if row['Sisa_Bulan'] < 1: return '🔴 Urgent'
+        if row['Sisa_Bulan'] < 2: return '🟠 Warning'
         return '🟡 Perlu Order'
-
     prev['Status'] = prev.apply(sts, axis=1)
     prev = prev[prev['Keb_Aktual'] > 0]
-    if sel_status:
-        prev = prev[prev['Status'].isin(sel_status)]
+    if sel_status: prev = prev[prev['Status'].isin(sel_status)]
 
-    # ---- SISA STOK ----
     st.subheader("⏳ Sisa Stok Preventive dalam Bulan")
     sp = prev.pivot_table(index=['Kode Material','Nama Material'], columns='PLTD', values='Sisa_Bulan', aggfunc='first', fill_value=0.0).reset_index()
-
-    # Pastikan semua 15 PLTD muncul
     for pltd in SEMUA_PLTD:
-        if pltd not in sp.columns:
-            sp[pltd] = 0.0
+        if pltd not in sp.columns: sp[pltd] = 0.0
     pltd_cols_s = [p for p in SEMUA_PLTD if p in sp.columns]
     sp = sp[['Kode Material','Nama Material'] + pltd_cols_s]
-
-    # Pastikan semua material dari URUTAN_MATERIAL muncul
     for kode in URUTAN_MATERIAL:
         if kode not in sp['Kode Material'].values:
             nama = PREVENTIVE_MAP.get(kode, PREVENTIVE_MAP.get(get_primary_code(kode), 'Unknown'))
             new_row = {'Kode Material': kode, 'Nama Material': nama}
-            for p in pltd_cols_s:
-                new_row[p] = 0.0
+            for p in pltd_cols_s: new_row[p] = 0.0
             sp = pd.concat([sp, pd.DataFrame([new_row])], ignore_index=True)
-
-    # Urutkan
     def urutkan(kode):
-        try:
-            return URUTAN_MATERIAL.index(kode)
-        except ValueError:
-            return 999
+        try: return URUTAN_MATERIAL.index(kode)
+        except ValueError: return 999
     sp['_sort'] = sp['Kode Material'].apply(urutkan)
     sp = sp.sort_values('_sort').drop(columns=['_sort'])
-
-    # Tampilkan
     cfg_s = {'Kode Material': st.column_config.TextColumn(pinned=True), 'Nama Material': st.column_config.TextColumn(pinned=True)}
-    for col in pltd_cols_s:
-        cfg_s[col] = st.column_config.NumberColumn(format="%.1f")
+    for col in pltd_cols_s: cfg_s[col] = st.column_config.NumberColumn(format="%.1f")
     def hl(v):
-        return 'background-color: #ffcccc; color: #cc0000; font-weight: bold;' if isinstance(v,(int,float)) and v <= 1.5 else ''
+        if isinstance(v,(int,float)) and v <= 1.5: return 'background-color: #ffcccc; color: #cc0000; font-weight: bold;'
+        return ''
     st.dataframe(sp.style.map(hl, subset=pltd_cols_s), column_config=cfg_s, use_container_width=True, hide_index=True)
     st.markdown("---")
-
-    # ---- KEB PM ----
     st.subheader("📋 Kebutuhan Per Bulan Sesuai PM")
     pm_p = prev.pivot_table(index=['Kode Material','Nama Material'], columns='PLTD', values='Keb_PM', aggfunc='first', fill_value=0).round(0).astype(int).reset_index()
     for pltd in SEMUA_PLTD:
-        if pltd not in pm_p.columns:
-            pm_p[pltd] = 0
+        if pltd not in pm_p.columns: pm_p[pltd] = 0
     pm_p = pm_p[['Kode Material','Nama Material'] + pltd_cols_s]
-    pm_cfg = {'Kode Material': st.column_config.TextColumn(pinned=True), 'Nama Material': st.column_config.TextColumn(pinned=True)}
-    st.dataframe(pm_p, column_config=pm_cfg, use_container_width=True, hide_index=True)
+    st.dataframe(pm_p, column_config={'Kode Material': st.column_config.TextColumn(pinned=True), 'Nama Material': st.column_config.TextColumn(pinned=True)}, use_container_width=True, hide_index=True)
     st.markdown("---")
-
-    # ---- KEB AKTUAL ----
     st.subheader("📋 Kebutuhan Per Bulan Sesuai CF Aktual")
     cf_p = prev.pivot_table(index=['Kode Material','Nama Material'], columns='PLTD', values='Keb_Aktual', aggfunc='first', fill_value=0).round(0).astype(int).reset_index()
     for pltd in SEMUA_PLTD:
-        if pltd not in cf_p.columns:
-            cf_p[pltd] = 0
+        if pltd not in cf_p.columns: cf_p[pltd] = 0
     cf_p = cf_p[['Kode Material','Nama Material'] + pltd_cols_s]
-    cf_cfg = {'Kode Material': st.column_config.TextColumn(pinned=True), 'Nama Material': st.column_config.TextColumn(pinned=True)}
-    st.dataframe(cf_p, column_config=cf_cfg, use_container_width=True, hide_index=True)
+    st.dataframe(cf_p, column_config={'Kode Material': st.column_config.TextColumn(pinned=True), 'Nama Material': st.column_config.TextColumn(pinned=True)}, use_container_width=True, hide_index=True)
     st.markdown("---")
-
-    # ---- DETAIL ----
     st.subheader(f"📋 Detail Propose ({jb} Bulan)")
     pvd = prev.rename(columns={'Keb_N_Bulan': f'Keb_{jb}_Bulan', 'Propose_N_Bulan': f'Propose_{jb}_Bulan'})
     cs = ['PLTD','Kode Material','Nama Material','Qty','Keb_Aktual','Sisa_Bulan',f'Keb_{jb}_Bulan',f'Propose_{jb}_Bulan','Status']
@@ -895,30 +740,20 @@ def page_propose():
     pvd = pvd.sort_values(['Status_Sort','PLTD'])
     st.dataframe(pvd[cs], use_container_width=True, hide_index=True, height=400)
     st.markdown("---")
-
-    # ---- REKOMENDASI ----
     st.subheader("📝 Rekomendasi Order")
-    urg = prev[prev['Status']=='🔴 Urgent']
-    wrn = prev[prev['Status']=='🟠 Warning']
+    urg = prev[prev['Status']=='🔴 Urgent']; wrn = prev[prev['Status']=='🟠 Warning']
     if not urg.empty:
         st.error(f"🔴 URGENT: {len(urg)} material, Total: {urg['Propose_N_Bulan'].sum():,.0f} unit")
-        rek_urg = urg[['PLTD','Nama Material','Qty','Keb_Aktual','Propose_N_Bulan']].copy()
-        rek_urg.columns = ['PLTD','Material','Stok','Keb/Bulan',f'Order ({jb} bln)']
-        st.dataframe(rek_urg, use_container_width=True, hide_index=True)
+        st.dataframe(urg[['PLTD','Nama Material','Qty','Keb_Aktual','Propose_N_Bulan']].rename(columns={'Nama Material':'Material','Keb_Aktual':'Keb/Bulan','Propose_N_Bulan':f'Order ({jb} bln)'}), use_container_width=True, hide_index=True)
     if not wrn.empty:
         st.warning(f"🟠 WARNING: {len(wrn)} material, Total: {wrn['Propose_N_Bulan'].sum():,.0f} unit")
-        rek_wrn = wrn[['PLTD','Nama Material','Qty','Keb_Aktual','Propose_N_Bulan']].copy()
-        rek_wrn.columns = ['PLTD','Material','Stok','Keb/Bulan',f'Order ({jb} bln)']
-        st.dataframe(rek_wrn, use_container_width=True, hide_index=True)
-    total_order = urg['Propose_N_Bulan'].sum() + wrn['Propose_N_Bulan'].sum()
-    st.info(f"📦 Total usulan order: {total_order:,.0f} unit")
+        st.dataframe(wrn[['PLTD','Nama Material','Qty','Keb_Aktual','Propose_N_Bulan']].rename(columns={'Nama Material':'Material','Keb_Aktual':'Keb/Bulan','Propose_N_Bulan':f'Order ({jb} bln)'}), use_container_width=True, hide_index=True)
+    st.info(f"📦 Total usulan order: {urg['Propose_N_Bulan'].sum() + wrn['Propose_N_Bulan'].sum():,.0f} unit")
 
-# ==================== PAGE TRANSAKSI ====================
 def page_transaksi():
     st.title("📊 Transaksi Project")
     st.info("Segera hadir.")
 
-# ==================== NAVIGASI ====================
 pg = st.navigation([
     st.Page(home, title="Beranda", icon="🏠", default=True),
     st.Page(page_stock, title="Stok PLTD", icon="📦"),
