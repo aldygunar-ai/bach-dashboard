@@ -187,59 +187,63 @@ def load_all():
                     d.columns = [str(c).strip() for c in d.columns]
                     log.append(f"M1 columns ({len(d.columns)}): {list(d.columns)}")
                     
-                    # HARDCODE berdasarkan struktur yang kamu share:
-                    # Kolom J (index 9) = Nama PLTD
-                    # Kolom C (index 2) = Kode Material
-                    # Kolom K (index 10) = Keb PM
-                    # Kolom L (index 11) = Keb Aktual
-                    if len(d.columns) >= 12:
-                        pltd_name = d.columns[9]
-                        kode_name = d.columns[2]
-                        pm_name = d.columns[10]
-                        aktual_name = d.columns[11]
-                        log.append(f"HARDCODE: pltd={pltd_name}, kode={kode_name}, pm={pm_name}, aktual={aktual_name}")
-                        
-                        d = d.rename(columns={
-                            pltd_name: 'pltd',
-                            kode_name: 'kode_material',
-                            pm_name: 'keb_pm',
-                            aktual_name: 'keb_aktual'
-                        })
-                        
-                        d['pltd'] = d['pltd'].astype(str).str.strip().str.upper()
-                        d['kode_material'] = d['kode_material'].astype(str).str.strip().str.upper()
-                        d['primary_code'] = d['kode_material'].apply(get_primary_code)
-                        d['keb_pm'] = pd.to_numeric(d['keb_pm'], errors='coerce').fillna(0)
-                        d['keb_aktual'] = pd.to_numeric(d['keb_aktual'], errors='coerce').fillna(0)
-                        
-                        res['m1'] = d
-                        log.append(f"M1 OK: {len(d)} baris")
-                        log.append(f"Sample aktual: {d['keb_aktual'].head(5).tolist()}")
-                        log.append(f"Sample pltd: {d['pltd'].head(5).tolist()}")
-                    else:
-                        log.append(f"ERR M1: kolom < 12 ({len(d.columns)})")
-                except Exception as e:
-                    log.append(f"ERR M1: {str(e)[:120]}")
-            
-            if ('master' in t or 'mater' in t) and '2' in t:
-                try:
-                    d = get_as_dataframe(ws, evaluate_formulas=True)
-                    d.columns = [str(c).strip() for c in d.columns]
-                    pltd_c = next((c for c in d.columns if 'pltd' in c.lower()), None)
-                    dur_c = next((c for c in d.columns if 'durasi' in c.lower()), None)
-                    if pltd_c:
-                        d = d.rename(columns={pltd_c: 'pltd'})
-                    if dur_c:
-                        d = d.rename(columns={dur_c: 'durasi_kirim'})
-                    if 'pltd' in d.columns:
-                        d['pltd'] = d['pltd'].astype(str).str.strip().str.upper()
-                    d['durasi_kirim'] = pd.to_numeric(d.get('durasi_kirim', 14), errors='coerce').fillna(14)
-                    res['m2'] = d
-                    log.append(f"M2 OK: {len(d)} baris")
-                except Exception as e:
-                    log.append(f"ERR M2: {str(e)[:80]}")
-    except Exception as e:
-        log.append(f"ERR Master PLTD: {str(e)[:80]}")
+# AUTO-DETECT + FALLBACK HARDCODE
+# Cari kolom berdasarkan nama dulu, kalau gagal baru hardcode
+pltd_name = None
+kode_name = None
+pm_name = None
+aktual_name = None
+
+for c in d.columns:
+    cl = c.lower()
+    if 'nama pltd' in cl or (cl == 'pltd'):
+        pltd_name = c
+    if 'kode material' in cl or (cl == 'kode'):
+        kode_name = c
+    # Cari "Aktual CF" atau "Sesuai Aktual" 
+    if ('aktual' in cl and 'cf' in cl) or 'sesuai aktual' in cl:
+        aktual_name = c
+    # Cari "CF PM" atau "Sesuai PM"
+    if ('pm' in cl and 'cf' in cl) or 'sesuai pm' in cl:
+        pm_name = c
+
+# Fallback hardcode kalau tidak ketemu
+if pltd_name is None and len(d.columns) > 9:
+    pltd_name = d.columns[9]
+if kode_name is None and len(d.columns) > 2:
+    kode_name = d.columns[2]
+if pm_name is None and len(d.columns) > 10:
+    pm_name = d.columns[10]
+if aktual_name is None and len(d.columns) > 11:
+    aktual_name = d.columns[11]
+
+log.append(f"DETECT: pltd='{pltd_name}', kode='{kode_name}', pm='{pm_name}', aktual='{aktual_name}'")
+
+if pltd_name and kode_name and aktual_name:
+    d = d.rename(columns={
+        pltd_name: 'pltd',
+        kode_name: 'kode_material',
+        pm_name: 'keb_pm' if pm_name else 'keb_pm_temp',
+        aktual_name: 'keb_aktual'
+    })
+    
+    d['pltd'] = d['pltd'].astype(str).str.strip().str.upper()
+    d['kode_material'] = d['kode_material'].astype(str).str.strip().str.upper()
+    d['primary_code'] = d['kode_material'].apply(get_primary_code)
+    d['keb_aktual'] = pd.to_numeric(d['keb_aktual'], errors='coerce').fillna(0)
+    
+    if 'keb_pm' in d.columns:
+        d['keb_pm'] = pd.to_numeric(d['keb_pm'], errors='coerce').fillna(0)
+    else:
+        d['keb_pm'] = d['keb_aktual']
+    
+    res['m1'] = d
+    log.append(f"M1 OK: {len(d)} baris")
+    log.append(f"Sample aktual: {d['keb_aktual'].head(10).tolist()}")
+    log.append(f"Sample pltd: {d['pltd'].head(10).tolist()}")
+    log.append(f"Sample kode: {d['kode_material'].head(10).tolist()}")
+else:
+    log.append(f"ERR M1: kolom tidak ditemukan. pltd={pltd_name}, kode={kode_name}, aktual={aktual_name}")
 
     # --- CIKANDE ---
     try:
