@@ -718,13 +718,24 @@ def page_propose():
     prev = prev[prev['Keb_Aktual'] > 0]
     if sel_status:
         prev = prev[prev['Status'].isin(sel_status)]
-    st.subheader("⏳ Sisa Stok Preventive dalam Bulan")
+       st.subheader("⏳ Sisa Stok Preventive dalam Bulan")
     sp = prev.pivot_table(index=['Kode Material','Nama Material'], columns='PLTD', values='Sisa_Bulan', aggfunc='first', fill_value=0.0).reset_index()
     for pltd in SEMUA_PLTD:
         if pltd not in sp.columns:
             sp[pltd] = 0.0
     pltd_cols_s = [p for p in SEMUA_PLTD if p in sp.columns]
     sp = sp[['Kode Material','Nama Material'] + pltd_cols_s]
+    
+    # TAMBAHKAN: pastikan semua kode material dari URUTAN_MATERIAL muncul
+    for kode in URUTAN_MATERIAL:
+        if kode not in sp['Kode Material'].values:
+            # Cari nama material dari PREVENTIVE_MAP
+            nama = PREVENTIVE_MAP.get(kode, PREVENTIVE_MAP.get(get_primary_code(kode), 'Unknown'))
+            new_row = {'Kode Material': kode, 'Nama Material': nama}
+            for p in pltd_cols_s:
+                new_row[p] = 0.0
+            sp = pd.concat([sp, pd.DataFrame([new_row])], ignore_index=True)
+    
     def urutkan(kode):
         try:
             return URUTAN_MATERIAL.index(kode)
