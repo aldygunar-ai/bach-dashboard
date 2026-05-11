@@ -519,19 +519,25 @@ def page_stock():
     data = load_all()
     df = data['stock'].copy()
     debug_log = data.get('debug_log', [])
-    if df.empty: st.warning("Data belum tersedia."); return
+    if df.empty:
+        st.warning("Data belum tersedia.")
+        return
     cik = data['cik']
     if not cik.empty:
         df = df.merge(cik, on=['Kode Material', 'Nama Material', 'Primary Code'], how='left')
         df['WH Cikande'] = df['WH Cikande'].fillna(0)
-    else: df['WH Cikande'] = 0.0
+    else:
+        df['WH Cikande'] = 0.0
 
     with st.sidebar:
         with st.expander("🔧 DEBUG INFO", expanded=False):
             for log in debug_log:
-                if 'ERR' in log: st.error(log)
-                elif 'WARN' in log: st.warning(log)
-                else: st.text(log)
+                if 'ERR' in log:
+                    st.error(log)
+                elif 'WARN' in log:
+                    st.warning(log)
+                else:
+                    st.text(log)
 
     st.sidebar.header("Filter Stok")
     sel_pltd = st.sidebar.multiselect("PLTD", sorted(df['PLTD'].unique()), default=[])
@@ -545,79 +551,91 @@ def page_stock():
     if sel_jenis: f = f[f['Jenis'].isin(sel_jenis)]
     if sel_nama: f = f[f['Nama Material'].isin(sel_nama)]
     if sel_kode: f = f[f['Kode Material'].isin(sel_kode)]
-    prev = f[f['Jenis']=='Preventive'].copy()
-    corr = f[f['Jenis']=='Corrective'].copy()
+
+    prev = f[f['Jenis'] == 'Preventive'].copy()
+    corr = f[f['Jenis'] == 'Corrective'].copy()
     m1 = data['m1']
 
     st.subheader("🔵 Material Preventive")
     if not prev.empty:
-        p = prev.pivot_table(index=['Kode Material','Nama Material'], columns='PLTD', values='Qty', aggfunc='sum', fill_value=0).round(0).astype(int)
-        cik_p = prev.groupby(['Kode Material','Nama Material'])['WH Cikande'].max().round(0).astype(int)
+        p = prev.pivot_table(index=['Kode Material', 'Nama Material'], columns='PLTD', values='Qty', aggfunc='sum', fill_value=0)
+        p = p.round(0).astype(int)
+        cik_p = prev.groupby(['Kode Material', 'Nama Material'])['WH Cikande'].max().round(0).astype(int)
         p = p.join(cik_p)
         p['Total'] = p.drop(columns='WH Cikande').sum(axis=1)
         p = p.reset_index()
-        pltd_cols = [c for c in p.columns if c not in ('Kode Material','Nama Material','WH Cikande','Total')]
-        p = p[['Kode Material','Nama Material'] + pltd_cols + ['WH Cikande','Total']]
-        st.dataframe(p, column_config={'Kode Material': st.column_config.TextColumn(pinned=True), 'Nama Material': st.column_config.TextColumn(pinned=True)}, use_container_width=True, hide_index=True)
-    else: st.info("Tidak ada data Preventive.")
+        pltd_cols = [c for c in p.columns if c not in ('Kode Material', 'Nama Material', 'WH Cikande', 'Total')]
+        p = p[['Kode Material', 'Nama Material'] + pltd_cols + ['WH Cikande', 'Total']]
+        cfg = {'Kode Material': st.column_config.TextColumn(pinned=True), 'Nama Material': st.column_config.TextColumn(pinned=True)}
+        st.dataframe(p, column_config=cfg, use_container_width=True, hide_index=True)
+    else:
+        st.info("Tidak ada data Preventive.")
 
     st.subheader("⏳ Sisa Stok Preventive dalam Bulan")
     if not prev.empty and m1 is not None:
         sisa_df = hitung_sisa_bulan(prev, m1)
         if not sisa_df.empty:
-            sp = sisa_df.pivot_table(index=['Kode Material','Nama Material'], columns='PLTD', values='Sisa_Bulan', aggfunc='first', fill_value=0.0).reset_index()
+            sp = sisa_df.pivot_table(index=['Kode Material', 'Nama Material'], columns='PLTD', values='Sisa_Bulan', aggfunc='first', fill_value=0.0)
+            sp = sp.reset_index()
             for pltd in SEMUA_PLTD:
-                if pltd not in sp.columns: sp[pltd] = 0.0
+                if pltd not in sp.columns:
+                    sp[pltd] = 0.0
             pltd_cols_s = [p for p in SEMUA_PLTD if p in sp.columns]
-            sp = sp[['Kode Material','Nama Material'] + pltd_cols_s]
+            sp = sp[['Kode Material', 'Nama Material'] + pltd_cols_s]
             def urutkan(kode):
-                try: return URUTAN_MATERIAL.index(kode)
-                except ValueError: return 999
+                try:
+                    return URUTAN_MATERIAL.index(kode)
+                except ValueError:
+                    return 999
             sp['_sort'] = sp['Kode Material'].apply(urutkan)
             sp = sp.sort_values('_sort').drop(columns=['_sort'])
             if highlight_only:
                 mask = (sp[pltd_cols_s] > 0) & (sp[pltd_cols_s] <= 1.5)
                 sp = sp[mask.any(axis=1)]
             cfg_s = {'Kode Material': st.column_config.TextColumn(pinned=True), 'Nama Material': st.column_config.TextColumn(pinned=True)}
-            for col in pltd_cols_s: cfg_s[col] = st.column_config.NumberColumn(format="%.1f")
+            for col in pltd_cols_s:
+                cfg_s[col] = st.column_config.NumberColumn(format="%.1f")
             def hl(val):
-                if isinstance(val, (int, float)) and val <= 1.5: return 'background-color: #ffcccc; color: #cc0000; font-weight: bold;'
+                if isinstance(val, (int, float)) and val <= 1.5:
+                    return 'background-color: #ffcccc; color: #cc0000; font-weight: bold;'
                 return ''
             st.dataframe(sp.style.map(hl, subset=pltd_cols_s), column_config=cfg_s, use_container_width=True, hide_index=True)
-                        with st.expander("🔍 Debug Sample Sisa Bulan"):
-                # Tampilkan sample + khusus Padang Manggar
-                sample = sisa_df[['PLTD','Kode Material','Nama Material','Qty','Keb_Aktual','Sisa_Bulan']].head(30)
+            
+            with st.expander("🔍 Debug Sample Sisa Bulan"):
+                sample = sisa_df[['PLTD', 'Kode Material', 'Nama Material', 'Qty', 'Keb_Aktual', 'Sisa_Bulan']].head(30)
                 st.dataframe(sample, use_container_width=True, hide_index=True)
                 
-                # TAMPILKAN KHUSUS PADANG MANGGAR
                 padang_sisa = sisa_df[sisa_df['PLTD'] == 'PADANG MANGGAR']
                 if not padang_sisa.empty:
                     st.write("**🔍 Data PADANG MANGGAR di sisa_df:**")
-                    st.dataframe(padang_sisa[['PLTD','Kode Material','Nama Material','Qty','Keb_Aktual','Sisa_Bulan']], use_container_width=True, hide_index=True)
+                    st.dataframe(padang_sisa[['PLTD', 'Kode Material', 'Nama Material', 'Qty', 'Keb_Aktual', 'Sisa_Bulan']], use_container_width=True, hide_index=True)
                 else:
                     st.warning("⚠️ PADANG MANGGAR TIDAK ADA di sisa_df!")
-                    
-                    # Cek apakah ada di df_stock (sebelum merge)
-                    st.write("**🔍 PADANG MANGGAR di prev (df_stock):**")
                     padang_prev = prev[prev['PLTD'] == 'PADANG MANGGAR']
                     if not padang_prev.empty:
-                        st.dataframe(padang_prev[['PLTD','Kode Material','Nama Material','Qty','Primary Code','Jenis']], use_container_width=True, hide_index=True)
+                        st.write("**🔍 PADANG MANGGAR di prev (df_stock):**")
+                        st.dataframe(padang_prev[['PLTD', 'Kode Material', 'Nama Material', 'Qty', 'Primary Code', 'Jenis']], use_container_width=True, hide_index=True)
                     else:
                         st.error("❌ PADANG MANGGAR JUGA TIDAK ADA di prev!")
-        else: st.info("Data Sisa Bulan tidak tersedia.")
-    else: st.info("Data tidak lengkap.")
+        else:
+            st.info("Data Sisa Bulan tidak tersedia.")
+    else:
+        st.info("Data tidak lengkap untuk menghitung Sisa Bulan.")
 
     st.subheader("🟠 Material Corrective")
     if not corr.empty:
-        p = corr.pivot_table(index=['Kode Material','Nama Material'], columns='PLTD', values='Qty', aggfunc='sum', fill_value=0).round(0).astype(int)
-        cik_c = corr.groupby(['Kode Material','Nama Material'])['WH Cikande'].max().round(0).astype(int)
+        p = corr.pivot_table(index=['Kode Material', 'Nama Material'], columns='PLTD', values='Qty', aggfunc='sum', fill_value=0)
+        p = p.round(0).astype(int)
+        cik_c = corr.groupby(['Kode Material', 'Nama Material'])['WH Cikande'].max().round(0).astype(int)
         p = p.join(cik_c)
         p['Total'] = p.drop(columns='WH Cikande').sum(axis=1)
         p = p.reset_index()
-        pltd_cols = [c for c in p.columns if c not in ('Kode Material','Nama Material','WH Cikande','Total')]
-        p = p[['Kode Material','Nama Material'] + pltd_cols + ['WH Cikande','Total']]
-        st.dataframe(p, column_config={'Kode Material': st.column_config.TextColumn(pinned=True), 'Nama Material': st.column_config.TextColumn(pinned=True)}, use_container_width=True, hide_index=True)
-    else: st.info("Tidak ada data Corrective.")
+        pltd_cols = [c for c in p.columns if c not in ('Kode Material', 'Nama Material', 'WH Cikande', 'Total')]
+        p = p[['Kode Material', 'Nama Material'] + pltd_cols + ['WH Cikande', 'Total']]
+        cfg = {'Kode Material': st.column_config.TextColumn(pinned=True), 'Nama Material': st.column_config.TextColumn(pinned=True)}
+        st.dataframe(p, column_config=cfg, use_container_width=True, hide_index=True)
+    else:
+        st.info("Tidak ada data Corrective.")
 
 def page_analisis():
     st.title("📊 Analisis Pemakaian Material")
