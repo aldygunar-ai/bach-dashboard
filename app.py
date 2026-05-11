@@ -40,12 +40,15 @@ for nama, sid in SHEETS.items():
         
         # Kumpulkan material unik dengan stok terakhir
         material_stok = {}
-        for r in data[1:]:
-            if len(r) <= 10:
-                continue
-            nama_mat = r[8].strip() if len(r) > 8 else ''
-            kode = r[10].strip() if len(r) > 10 else ''
-            qty_s = r[3].strip() if len(r) > 3 else '0'
+                        for r in data[1:]:
+                    if len(r) <= max(i_nama, i_kode, i_qty):
+                        continue
+                    nama = r[i_nama].strip() if i_nama < len(r) else ''
+                    product_id = r[i_kode].strip() if i_kode < len(r) else ''
+                    qty_s = r[i_qty].strip() if i_qty < len(r) else ''
+                    
+                    # Ekstrak kode simpel dari PRODUCT IDENTIFICATION
+                    kode = extract_kode_from_product_id(product_id, nama)
             
             if not nama_mat:
                 continue
