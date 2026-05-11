@@ -469,18 +469,53 @@ def page_stock():
         if not sisa_df.empty:
             sp = sisa_df.pivot_table(index=['Kode Material', 'Nama Material'], columns='PLTD', values='Sisa_Bulan', aggfunc='first', fill_value=0.0)
             sp = sp.reset_index()
-            pltd_cols_s = [c for c in sp.columns if c not in ('Kode Material', 'Nama Material')]
+            
+            # DAFTAR SEMUA PLTD (15 site)
+            SEMUA_PLTD = [
+                'PEMARON', 'MANGOLI', 'TAYAN', 'TIMIKA', 'BOBONG',
+                'MERAWANG', 'AIR ANYIR', 'PADANG MANGGAR', 'KRUENG RAYA',
+                'LUENG BATA', 'ULEE KARENG', 'WAENA', 'SAMBELIA', 'TIMIKA 2', 'WAMENA'
+            ]
+            
+            for pltd in SEMUA_PLTD:
+                if pltd not in sp.columns:
+                    sp[pltd] = 0.0
+            
+            pltd_cols_s = [p for p in SEMUA_PLTD if p in sp.columns]
             sp = sp[['Kode Material', 'Nama Material'] + pltd_cols_s]
+            
+            # URUTKAN material sesuai manual
+            URUTAN_MATERIAL = [
+                'LF3325', 'LF777', '2020PM V30-C', 'FS1006', 'WF2076',
+                '3629140', 'AF872', 'AF25278', 'AF25278 (Free)', 'AHO1135',
+                '5413003', '3015257', '5412990',
+                '5PK889 / 21-3107 / 25471145', '23PK2032 / 21-3110 / 25477108',
+                'RIMULA R4 X 15W-40', 'WCL'
+            ]
+            
+            def urutkan(kode):
+                try:
+                    return URUTAN_MATERIAL.index(kode)
+                except ValueError:
+                    return 999
+            
+            sp['_sort'] = sp['Kode Material'].apply(urutkan)
+            sp = sp.sort_values('_sort').drop(columns=['_sort'])
+            
+            # Highlight
             if highlight_only:
                 mask = (sp[pltd_cols_s] > 0) & (sp[pltd_cols_s] <= 1.5)
                 sp = sp[mask.any(axis=1)]
+            
             cfg_s = {'Kode Material': st.column_config.TextColumn(pinned=True), 'Nama Material': st.column_config.TextColumn(pinned=True)}
             for col in pltd_cols_s:
                 cfg_s[col] = st.column_config.NumberColumn(format="%.1f")
+            
             def hl(val):
                 if isinstance(val, (int, float)) and val <= 1.5:
                     return 'background-color: #ffcccc; color: #cc0000; font-weight: bold;'
                 return ''
+            
             st.dataframe(sp.style.map(hl, subset=pltd_cols_s), column_config=cfg_s, use_container_width=True, hide_index=True)
             
             with st.expander("🔍 Debug Sample Sisa Bulan"):
@@ -488,8 +523,8 @@ def page_stock():
         else:
             st.info("Data Sisa Bulan tidak tersedia.")
     else:
-        st.info("Data tidak lengkap.")
-
+        st.info("Data tidak lengkap untuk menghitung Sisa Bulan.")
+        
     st.subheader("🟠 Material Corrective")
     if not corr.empty:
         p = corr.pivot_table(index=['Kode Material', 'Nama Material'], columns='PLTD', values='Qty', aggfunc='sum', fill_value=0)
@@ -650,6 +685,24 @@ def page_propose():
     sp = prev.pivot_table(index=['Kode Material','Nama Material'], columns='PLTD', values='Sisa_Bulan', aggfunc='first', fill_value=0.0).reset_index()
     pltd_cols_s = [c for c in sp.columns if c not in ('Kode Material','Nama Material')]
     sp = sp[['Kode Material','Nama Material'] + pltd_cols_s]
+                # URUTKAN material sesuai urutan di Excel manual kamu
+            URUTAN_MATERIAL = [
+                'LF3325', 'LF777', '2020PM V30-C', 'FS1006', 'WF2076',
+                '3629140', 'AF872', 'AF25278', 'AF25278 (Free)', 'AHO1135',
+                '5413003', '3015257', '5412990',
+                '5PK889 / 21-3107 / 25471145', '23PK2032 / 21-3110 / 25477108',
+                'RIMULA R4 X 15W-40', 'WCL'
+            ]
+            
+            # Buat kolom sorting
+            def urutkan(kode):
+                try:
+                    return URUTAN_MATERIAL.index(kode)
+                except ValueError:
+                    return 999  # material lain di bawah
+            
+            sp['_sort'] = sp['Kode Material'].apply(urutkan)
+            sp = sp.sort_values('_sort').drop(columns=['_sort'])
     cfg_s = {'Kode Material': st.column_config.TextColumn(pinned=True), 'Nama Material': st.column_config.TextColumn(pinned=True)}
     for col in pltd_cols_s:
         cfg_s[col] = st.column_config.NumberColumn(format="%.1f")
