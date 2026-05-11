@@ -584,8 +584,26 @@ def page_stock():
                 if isinstance(val, (int, float)) and val <= 1.5: return 'background-color: #ffcccc; color: #cc0000; font-weight: bold;'
                 return ''
             st.dataframe(sp.style.map(hl, subset=pltd_cols_s), column_config=cfg_s, use_container_width=True, hide_index=True)
-            with st.expander("🔍 Debug Sample Sisa Bulan"):
-                st.dataframe(sisa_df[['PLTD','Kode Material','Nama Material','Qty','Keb_Aktual','Sisa_Bulan']].head(30), use_container_width=True, hide_index=True)
+                        with st.expander("🔍 Debug Sample Sisa Bulan"):
+                # Tampilkan sample + khusus Padang Manggar
+                sample = sisa_df[['PLTD','Kode Material','Nama Material','Qty','Keb_Aktual','Sisa_Bulan']].head(30)
+                st.dataframe(sample, use_container_width=True, hide_index=True)
+                
+                # TAMPILKAN KHUSUS PADANG MANGGAR
+                padang_sisa = sisa_df[sisa_df['PLTD'] == 'PADANG MANGGAR']
+                if not padang_sisa.empty:
+                    st.write("**🔍 Data PADANG MANGGAR di sisa_df:**")
+                    st.dataframe(padang_sisa[['PLTD','Kode Material','Nama Material','Qty','Keb_Aktual','Sisa_Bulan']], use_container_width=True, hide_index=True)
+                else:
+                    st.warning("⚠️ PADANG MANGGAR TIDAK ADA di sisa_df!")
+                    
+                    # Cek apakah ada di df_stock (sebelum merge)
+                    st.write("**🔍 PADANG MANGGAR di prev (df_stock):**")
+                    padang_prev = prev[prev['PLTD'] == 'PADANG MANGGAR']
+                    if not padang_prev.empty:
+                        st.dataframe(padang_prev[['PLTD','Kode Material','Nama Material','Qty','Primary Code','Jenis']], use_container_width=True, hide_index=True)
+                    else:
+                        st.error("❌ PADANG MANGGAR JUGA TIDAK ADA di prev!")
         else: st.info("Data Sisa Bulan tidak tersedia.")
     else: st.info("Data tidak lengkap.")
 
@@ -749,6 +767,13 @@ def page_propose():
         return ''
     st.dataframe(sp.style.map(hl, subset=pltd_cols_s), column_config=cfg_s, use_container_width=True, hide_index=True)
     st.markdown("---")
+        # Debug: cek PADANG MANGGAR
+    with st.expander("🔍 Debug PADANG MANGGAR"):
+        padang_sisa = sisa_df[sisa_df['PLTD'] == 'PADANG MANGGAR']
+        if not padang_sisa.empty:
+            st.dataframe(padang_sisa[['PLTD','Kode Material','Nama Material','Qty','Keb_Aktual','Sisa_Bulan']], use_container_width=True, hide_index=True)
+        else:
+            st.warning("⚠️ PADANG MANGGAR TIDAK ADA di sisa_df!")
     st.subheader("📋 Kebutuhan Per Bulan Sesuai PM")
     pm_p = prev.pivot_table(index=['Kode Material','Nama Material'], columns='PLTD', values='Keb_PM', aggfunc='first', fill_value=0).round(0).astype(int).reset_index()
     for pltd in SEMUA_PLTD:
