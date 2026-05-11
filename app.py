@@ -114,22 +114,66 @@ def extract_kode_from_product_id(product_id, nama_material):
     nama = str(nama_material).upper().strip()
     gabungan = pid + ' ' + nama
 
-    # Cari kode yang dikenal di dalam gabungan
+    # ===== MAPPING KHUSUS: kode aneh -> kode simpel =====
+    PID_TO_CODE = {
+        'DP.ELE.PAR.001----': '2020PM V30-C',      # Element Water Separator
+        'DP.FIL.FLE.001----': 'FS1006',             # Fuel Filter
+        'DP.CF.FLE.001----': 'WF2076',              # Water Filter
+        'DP.OIL.FLE.009----': 'LF777',              # Oil Filter By pass
+        'FS.SO.VDO.001----': None,                  # Switch Oil - skip
+        'AKSESORIS PART, LOCTITE, NONE, 242, NONE': None,
+        'AKSESORIS PART, LOCTITE, NONE, 5699, NONE': None,
+        'ES.SKU.POL.068': None,
+        'ASSET': None,
+        'VARISTOR----': None,
+    }
+    
+    if pid in PID_TO_CODE:
+        mapped = PID_TO_CODE[pid]
+        if mapped is None:
+            return None  # Skip material ini
+        return mapped
+    
+    # ===== CARI KODE DI NAMA MATERIAL =====
+    # Contoh: "ELEMENT RACOR 2020PM PARKER" -> "2020PM V30-C"
+    # Contoh: "FILTER SEPARATOR FS 1006 FLEETGUARD" -> "FS1006"
+    KODE_DARI_NAMA = {
+        '2020PM': '2020PM V30-C',
+        'FS1006': 'FS1006',
+        'FS 1006': 'FS1006',
+        'WF2076': 'WF2076',
+        'LF777': 'LF777',
+        'LF3325': 'LF3325',
+        '5413003': '5413003',
+        '5412990': '5412990',
+        '3015257': '3015257',
+        '3629140': '3629140',
+        'AF872': 'AF872',
+        'AF25278': 'AF25278',
+        'AHO1135': 'AHO1135',
+    }
+    
+    nama_upper = nama.upper()
+    for key, value in KODE_DARI_NAMA.items():
+        if key in nama_upper:
+            return value
+    
+    # ===== CARI KODE DI PRODUCT ID + NAMA =====
     for kode in KNOWN_CODES:
         pattern = r'(?:^|[-/\s])' + re2.escape(kode) + r'(?:$|[-/\s])'
         if re2.search(pattern, gabungan):
             return kode
-
-    # Fallback: cari kata per kata di nama material
-    words = nama.split()
+    
+    # ===== CARI KATA DI NAMA =====
+    words = nama_upper.split()
     for word in words:
         word_clean = word.strip('()-.,')
         if word_clean in KNOWN_CODES:
             return word_clean
-
+    
     # Fallback terakhir
     return product_id
-
+    
 def norm(kode, nama):
     k = str(kode).strip().upper()
     nama_lower = str(nama).strip().lower()
@@ -230,9 +274,11 @@ def load_all():
                         qty = 0.0
 
                     kode = extract_kode_from_product_id(product_id, nama)
+                    if kode is None:
+                        continue  # Skip material yang tidak dikenal
                     key = (nama.strip().lower(), kode.strip().upper())
                     material_stok[key] = qty
-
+                    
                 ok = 0
                 for (nama_lower, kode), qty in material_stok.items():
                     rows.append((pltd.strip().upper(), kode, norm(kode, nama_lower).strip(), qty, get_primary_code(kode)))
