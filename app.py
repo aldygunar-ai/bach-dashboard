@@ -452,6 +452,33 @@ def page_stock():
     st.subheader("⏳ Sisa Stok Preventive dalam Bulan")
     if not prev.empty and m1 is not None:
         sisa_df = hitung_sisa_bulan(prev, m1)
+        
+        # Tambahkan PLTD yang ada di M1 tapi stoknya 0 (tidak muncul di stok)
+        if not sisa_df.empty and m1 is not None:
+            pltd_di_sisa = set(sisa_df['PLTD'].unique())
+            pltd_di_m1 = set(m1['pltd'].dropna().str.strip().str.upper().unique())
+            pltd_belum_ada = pltd_di_m1 - pltd_di_sisa
+            
+            if pltd_belum_ada:
+                # Ambil data dari M1 untuk PLTD yang belum ada
+                m1_tambah = m1[m1['pltd'].str.strip().str.upper().isin(pltd_belum_ada)].copy()
+                tambah_rows = []
+                for _, row in m1_tambah.iterrows():
+                    pc = str(row.get('primary_code', '')).strip().upper()
+                    if pc in PREVENTIVE_MAP:
+                        tambah_rows.append({
+                            'PLTD': row['pltd'].strip().upper(),
+                            'Kode Material': row.get('kode_material', pc),
+                            'Nama Material': PREVENTIVE_MAP.get(pc, 'Unknown'),
+                            'Primary Code': pc,
+                            'Qty': 0,
+                            'Jenis': 'Preventive',
+                            'Keb_Aktual': pd.to_numeric(row.get('keb_aktual', 0), errors='coerce') or 0,
+                            'Sisa_Bulan': 0.0,
+                        })
+                if tambah_rows:
+                    sisa_df = pd.concat([sisa_df, pd.DataFrame(tambah_rows)], ignore_index=True)
+        
         if not sisa_df.empty:
             sp = sisa_df.pivot_table(index=['Kode Material', 'Nama Material'], columns='PLTD', values='Sisa_Bulan', aggfunc='first', fill_value=0.0)
             sp = sp.reset_index()
