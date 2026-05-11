@@ -216,113 +216,51 @@ def load_all():
         for ws in sh.worksheets():
             t = ws.title.strip().lower()
             
-            # === MASTER DATA 1 ===
+                        # === MASTER DATA 1 ===
             if ('master' in t or 'mater' in t) and '1' in t:
                 try:
                     d = get_as_dataframe(ws, evaluate_formulas=True)
                     d.columns = [str(c).strip() for c in d.columns]
                     debug_log.append(f"   M1 original columns: {list(d.columns)}")
+                    debug_log.append(f"   M1 total columns: {len(d.columns)}")
                     
-                    # Cari kolom PLTD
-                    pltd_col = None
-                    for c in d.columns:
-                        if 'pltd' in c.lower() or 'nama pltd' in c.lower():
-                            pltd_col = c
-                            break
-                    
-                    # Cari kolom Kode Material
-                    kode_col = None
-                    for c in d.columns:
-                        if 'kode' in c.lower():
-                            kode_col = c
-                            break
-                    
-                    # Cari kolom Keb_Aktual (prioritaskan yg mengandung 'aktual' + 'cf')
-                    aktual_col = None
-                    pm_col = None
-                    for c in d.columns:
-                        c_lower = c.lower()
-                        if 'aktual' in c_lower and ('cf' in c_lower or 'sesuai' in c_lower):
-                            aktual_col = c
-                        elif 'pm' in c_lower and 'cf' in c_lower:
-                            pm_col = c
-                    
-                    # Fallback jika tidak ketemu
-                    if aktual_col is None:
-                        for c in d.columns:
-                            if 'aktual' in c.lower():
-                                aktual_col = c
-                                break
-                    if pm_col is None:
-                        for c in d.columns:
-                            if 'pm' in c.lower():
-                                pm_col = c
-                                break
-                    
-                    debug_log.append(f"   Detected: pltd={pltd_col}, kode={kode_col}, pm={pm_col}, aktual={aktual_col}")
-                    
-                    if pltd_col:
-                        d.rename(columns={pltd_col: 'pltd'}, inplace=True)
-                    if kode_col:
-                        d.rename(columns={kode_col: 'kode_material'}, inplace=True)
-                    if aktual_col:
-                        d.rename(columns={aktual_col: 'keb_aktual'}, inplace=True)
-                    if pm_col:
-                        d.rename(columns={pm_col: 'keb_pm'}, inplace=True)
-                    
-                    for col in ['pltd', 'kode_material']:
-                        if col in d.columns:
-                            d[col] = d[col].astype(str).str.strip().str.upper()
-                    
-                    if 'kode_material' in d.columns:
-                        d['primary_code'] = d['kode_material'].apply(get_primary_code)
-                    
-                    for col in ['keb_aktual', 'keb_pm']:
-                        if col in d.columns:
-                            d[col] = pd.to_numeric(d[col], errors='coerce').fillna(0)
-                    
-                    if 'keb_pm' not in d.columns and 'keb_aktual' in d.columns:
-                        d['keb_pm'] = d['keb_aktual']
-                    if 'keb_aktual' not in d.columns and 'keb_pm' in d.columns:
-                        d['keb_aktual'] = d['keb_pm']
-                    
-                    res['m1'] = d
-                    debug_log.append(f"   M1 loaded: {len(d)} baris")
-                    if 'keb_aktual' in d.columns:
-                        debug_log.append(f"   Sample Keb_Aktual: {d['keb_aktual'].head(5).tolist()}")
+                    # HARDCODE: berdasarkan struktur yang kamu share
+                    # Kolom J = Nama PLTD, C = Kode Material, K = Keb_PM, L = Keb_Aktual
+                    if len(d.columns) >= 12:
+                        # Asumsi: J=9 (index), C=2, K=10, L=11
+                        pltd_col = d.columns[9]   # kolom ke-10 (0-indexed: 9)
+                        kode_col = d.columns[2]   # kolom ke-3
+                        pm_col = d.columns[10]    # kolom ke-11
+                        aktual_col = d.columns[11] # kolom ke-12
+                        
+                        debug_log.append(f"   HARDCODE: pltd={pltd_col}, kode={kode_col}, pm={pm_col}, aktual={aktual_col}")
+                        
+                        d.rename(columns={
+                            pltd_col: 'pltd',
+                            kode_col: 'kode_material',
+                            pm_col: 'keb_pm',
+                            aktual_col: 'keb_aktual'
+                        }, inplace=True)
+                        
+                        for col in ['pltd', 'kode_material']:
+                            if col in d.columns:
+                                d[col] = d[col].astype(str).str.strip().str.upper()
+                        
+                        if 'kode_material' in d.columns:
+                            d['primary_code'] = d['kode_material'].apply(get_primary_code)
+                        
+                        for col in ['keb_aktual', 'keb_pm']:
+                            if col in d.columns:
+                                d[col] = pd.to_numeric(d[col], errors='coerce').fillna(0)
+                        
+                        res['m1'] = d
+                        debug_log.append(f"   M1 loaded: {len(d)} baris")
+                        if 'keb_aktual' in d.columns:
+                            debug_log.append(f"   Sample Keb_Aktual: {d['keb_aktual'].head(5).tolist()}")
+                    else:
+                        debug_log.append(f"   ❌ M1 columns < 12, tidak bisa hardcode")
                 except Exception as e:
                     debug_log.append(f"   ❌ M1 error: {str(e)[:150]}")
-            
-            # === MASTER DATA 2 ===
-            if ('master' in t or 'mater' in t) and '2' in t:
-                try:
-                    d = get_as_dataframe(ws, evaluate_formulas=True)
-                    d.columns = [str(c).strip() for c in d.columns]
-                    
-                    pltd_col = None
-                    dur_col = None
-                    for c in d.columns:
-                        if 'pltd' in c.lower():
-                            pltd_col = c
-                        if 'durasi' in c.lower():
-                            dur_col = c
-                    
-                    if pltd_col:
-                        d.rename(columns={pltd_col: 'pltd'}, inplace=True)
-                    if dur_col:
-                        d.rename(columns={dur_col: 'durasi_kirim'}, inplace=True)
-                    if 'pltd' in d.columns:
-                        d['pltd'] = d['pltd'].astype(str).str.strip().str.upper()
-                    if 'durasi_kirim' in d.columns:
-                        d['durasi_kirim'] = pd.to_numeric(d['durasi_kirim'], errors='coerce').fillna(14)
-                    else:
-                        d['durasi_kirim'] = 14
-                    res['m2'] = d
-                    debug_log.append(f"   M2 loaded: {len(d)} baris")
-                except Exception as e:
-                    debug_log.append(f"   ❌ M2 error: {str(e)[:100]}")
-    except Exception as e:
-        debug_log.append(f"❌ Master PLTD GAGAL: {str(e)[:100]}")
 
     # ========== CIKANDE ==========
     try:
