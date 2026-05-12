@@ -899,6 +899,14 @@ def page_transaksi():
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
         
+        # Pastikan kolom penting ada
+        if 'STATUS' not in df.columns:
+            df['STATUS'] = '-'
+        if 'WH TUJUAN' not in df.columns:
+            df['WH TUJUAN'] = '-'
+        if 'ITEM NAME' not in df.columns:
+            df['ITEM NAME'] = '-'
+        
         return df
     
     df_raw = load_transaksi()
@@ -918,11 +926,11 @@ def page_transaksi():
         
         c = st.session_state.reset_counter
         
-        sel_proj = st.multiselect("📁 Project", df_raw['PROJECT'].unique(), default=[], key=f'p_{c}')
+        sel_proj = st.multiselect("📁 Project", sorted(df_raw['PROJECT'].unique()), default=[], key=f'p_{c}')
         sel_year = st.multiselect("📅 Tahun", sorted(df_raw['Tahun'].unique(), reverse=True), default=[], key=f'y_{c}')
-        sel_month = st.multiselect("🗓️ Bulan", df_raw['Bulan'].unique(), key=f'm_{c}')
+        sel_month = st.multiselect("🗓️ Bulan", sorted(df_raw['Bulan'].unique()), key=f'm_{c}')
         sel_stat = st.multiselect("📊 Status", sorted(df_raw['STATUS'].unique()), key=f's_{c}')
-        sel_site = st.multiselect("📍 Site (WH Tujuan)", sorted(df_raw['WH TUJUAN'].dropna().unique()), key=f'st_{c}')
+        sel_site = st.multiselect("📍 Site (WH Tujuan)", sorted(df_raw['WH TUJUAN'].unique()), key=f'st_{c}')
         
         st.divider()
         st.button("🔄 Clear All Filters", on_click=do_reset, use_container_width=True)
@@ -933,8 +941,6 @@ def page_transaksi():
     if sel_month: f = f[f['Bulan'].isin(sel_month)]
     if sel_stat: f = f[f['STATUS'].isin(sel_stat)]
     if sel_site: f = f[f['WH TUJUAN'].isin(sel_site)]
-    
-    st.title("📊 Dashboard Project Bach")
     
     if not (sel_proj or sel_year or sel_month or sel_stat or sel_site):
         st.info("👋 Silakan pilih filter di samping kiri untuk menampilkan data.")
@@ -985,9 +991,9 @@ def page_transaksi():
     
     st.markdown("---")
     
-    st.subheader("⚠️ Highlight Outstanding")
-    df_out = f[~f['STATUS'].isin(['DELIVERED', 'CANCEL'])]
-    if not df_out.empty:
+    if 'STATUS' in f.columns and not f[f['STATUS'].isin(['DELIVERED', 'CANCEL'])].empty:
+        st.subheader("⚠️ Highlight Outstanding")
+        df_out = f[~f['STATUS'].isin(['DELIVERED', 'CANCEL'])]
         st.dataframe(
             df_out[['TANGGAL', 'PROJECT', 'WH TUJUAN', 'ITEM NAME', 'QTY', 'STATUS']].head(15),
             use_container_width=True,
@@ -999,8 +1005,12 @@ def page_transaksi():
     st.markdown("---")
     
     st.subheader("📋 Detail Movement Record & Status")
+    display_cols = ['TANGGAL', 'PROJECT', 'WH TUJUAN', 'ITEM NAME', 'QTY']
+    if 'TOTAL COST' in f.columns: display_cols.append('TOTAL COST')
+    if 'STATUS' in f.columns: display_cols.append('STATUS')
+    
     st.dataframe(
-        f[['TANGGAL', 'PROJECT', 'WH TUJUAN', 'ITEM NAME', 'QTY', 'TOTAL COST', 'STATUS']].head(20),
+        f[display_cols].head(20),
         use_container_width=True,
         hide_index=True
     )
