@@ -867,33 +867,32 @@ def page_transaksi():
     @st.cache_data(ttl=600)
     def load_transaksi():
         headers = {'User-Agent': 'Mozilla/5.0'}
+        df_ops = pd.DataFrame()
+        df_das = pd.DataFrame()
+        
+        # === OPS ===
         try:
             res_ops = requests.get(URL_OPS, headers=headers, timeout=20)
             df_ops = pd.read_excel(io.BytesIO(res_ops.content))
             df_ops['PROJECT'] = 'PROJECT PLTD'
-        except:
-            df_ops = pd.DataFrame()
+        except Exception as e:
+            st.warning(f"Gagal load OPS: {str(e)[:80]}")
         
+        # === DAS ===
         try:
             res_das = requests.get(URL_DAS, headers=headers, timeout=20)
             if res_das.status_code == 200:
                 df_das_raw = pd.read_excel(io.BytesIO(res_das.content), header=None)
-                
-                # Cari baris header yang mengandung "Sum of QTY" atau "ITEM NAME"
                 header_row = None
                 for i, row in df_das_raw.iterrows():
                     row_text = ' '.join([str(v) for v in row.values if pd.notna(v)])
                     if 'Sum of QTY' in row_text or 'ITEM NAME' in row_text:
                         header_row = i
                         break
-                
                 if header_row is not None:
-                    # Set header
                     new_cols = [str(v).strip().upper() if pd.notna(v) else f'COL_{j}' for j, v in enumerate(df_das_raw.iloc[header_row])]
                     df_das_raw.columns = new_cols
                     df_das = df_das_raw.iloc[header_row + 1:].reset_index(drop=True)
-                    
-                    # Rename kolom
                     col_map = {}
                     for col in df_das.columns:
                         col_upper = str(col).upper()
@@ -904,34 +903,30 @@ def page_transaksi():
                         elif 'QTY' in col_upper or 'TOTAL' in col_upper:
                             col_map[col] = 'QTY'
                     df_das = df_das.rename(columns=col_map)
-                    
-                    # Ambil hanya kolom yang diperlukan
                     needed = ['WH TUJUAN', 'ITEM NAME', 'QTY']
                     for col in needed:
                         if col not in df_das.columns:
                             df_das[col] = 0
                     df_das = df_das[[c for c in needed if c in df_das.columns]]
                     df_das = df_das.dropna(subset=['WH TUJUAN', 'ITEM NAME'], how='all')
-                    
-                    # Konversi QTY ke numerik
                     if 'QTY' in df_das.columns:
                         df_das['QTY'] = pd.to_numeric(df_das['QTY'], errors='coerce').fillna(0)
-                else:
-                    st.warning("Header DAS tidak ditemukan")
-                    df_das = pd.DataFrame()
                 df_das['PROJECT'] = 'PROJECT DAS'
         except Exception as e:
-            st.warning(f"Gagal load DAS: {str(e)[:100]}")
-            df_das = pd.DataFrame()
-    # Gabungkan, pastikan kolom sama
-    if not df_ops.empty and not df_das.empty:
-        df = pd.concat([df_ops, df_das], ignore_index=True)
-    elif not df_ops.empty:
-        df = df_ops
-    elif not df_das.empty:
-        df = df_das
-    else:
-        df = pd.DataFrame()
+            st.warning(f"Gagal load DAS: {str(e)[:80]}")
+        
+        # === GABUNG ===
+        frames = []
+        if not df_ops.empty:
+            frames.append(df_ops)
+        if not df_das.empty:
+            frames.append(df_das)
+        
+        if frames:
+            df = pd.concat(frames, ignore_index=True)
+        else:
+            df = pd.DataFrame()
+        
         if not df.empty and 'TANGGAL' in df.columns:
             df['TANGGAL'] = pd.to_datetime(df['TANGGAL'], errors='coerce')
             df = df.dropna(subset=['TANGGAL'])
@@ -939,13 +934,12 @@ def page_transaksi():
             df['Bulan'] = df['TANGGAL'].dt.strftime('%B')
             df['Tgl_Str'] = df['TANGGAL'].dt.strftime('%Y-%m-%d')
         
-        # Pastikan kolom numerik
         for col in ['QTY', 'TOTAL COST']:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
         
         return df
-
+        
     df_raw = load_transaksi()
     
     # DEBUG: Cek isi dataframe
