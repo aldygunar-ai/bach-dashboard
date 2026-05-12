@@ -508,26 +508,144 @@ def hitung_sisa_bulan(df_stock, m1):
     return merged
 
 def home():
-    st.title("⚡ Dashboard Stok & Logistik PLTD")
+    # ================== HEADER ==================
+    st.markdown("""
+        <h1 style='text-align: center; color: #1E88E5; margin-bottom: 0;'>
+            ⚡ Dashboard Stok & Logistik PLTD
+        </h1>
+        <p style='text-align: center; color: #666; margin-top: 0;'>
+            Monitoring Real-time Stok Sparepart & Maintenance
+        </p>
+    """, unsafe_allow_html=True)
+    
     data = load_all()
     df = data.get('stock', pd.DataFrame())
-    if df.empty: st.warning("Data belum tersedia."); return
-    c1, c2, c3 = st.columns(3)
-    c1.metric("PLTD", df['PLTD'].nunique())
-    c2.metric("Total Stok", f"{df['Qty'].sum():,.0f}")
-    c3.metric("Prev / Corr", f"{(df['Jenis']=='Preventive').sum()} / {(df['Jenis']=='Corrective').sum()}")
+    
+    if df.empty:
+        st.warning("Data belum tersedia.")
+        return
+
+    # ================== KPI CARDS ==================
+    st.markdown("### Overview")
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        st.metric(
+            label="Total PLTD",
+            value=df['PLTD'].nunique(),
+            delta=None
+        )
+    
+    with col2:
+        total_stok = df['Qty'].sum()
+        st.metric(
+            label="Total Stok",
+            value=f"{total_stok:,.0f}",
+            delta=None
+        )
+    
+    with col3:
+        prev = (df['Jenis'] == 'Preventive').sum()
+        corr = (df['Jenis'] == 'Corrective').sum()
+        st.metric(
+            label="Preventive / Corrective",
+            value=f"{prev} / {corr}",
+            delta=f"{prev - corr:+} "
+        )
+    
+    with col4:
+        low_stock = (df['Qty'] <= 5).sum() if 'Qty' in df.columns else 0
+        st.metric(
+            label="Stok Kritis",
+            value=low_stock,
+            delta=None,
+            delta_color="inverse" if low_stock > 0 else "normal"
+        )
+
+    st.divider()
+
+    # ================== CHARTS ==================
+    c1, c2 = st.columns([3, 2])
+
+    with c1:
+        st.subheader("Distribusi Stok per PLTD")
+        stok_per_pltd = df.groupby('PLTD')['Qty'].sum().sort_values(ascending=False).head(10)
+        
+        fig = px.bar(
+            x=stok_per_pltd.values,
+            y=stok_per_pltd.index,
+            orientation='h',
+            color=stok_per_pltd.values,
+            color_continuous_scale='Blues',
+            labels={'x': 'Total Stok', 'y': 'PLTD'}
+        )
+        fig.update_layout(height=380, margin=dict(l=20, r=20, t=30, b=20))
+        st.plotly_chart(fig, use_container_width=True)
+
+    with c2:
+        st.subheader("Jenis Maintenance")
+        jenis_count = df['Jenis'].value_counts()
+        
+        fig2 = px.pie(
+            names=jenis_count.index,
+            values=jenis_count.values,
+            color_discrete_sequence=['#1E88E5', '#FF9800', '#4CAF50']
+        )
+        fig2.update_layout(height=380)
+        st.plotly_chart(fig2, use_container_width=True)
+
+    st.divider()
+
+    # ================== MAP ==================
+    st.subheader("Lokasi PLTD")
+    
     coords = {
         'PEMARON': (-8.16, 114.68), 'MANGOLI': (-1.88, 125.37), 'TAYAN': (-0.03, 110.10),
         'TIMIKA': (-4.56, 136.89), 'BOBONG': (-1.95, 124.39), 'MERAWANG': (-1.95, 105.96),
-        'AIR ANYIR': (-1.94, 106.11), 'PADANG MANGGAR': (-2.14, 106.14), 'KRUENG RAYA': (5.60, 95.53),
-        'LUENG BATA': (5.55, 95.33), 'ULEE KARENG': (5.55, 95.33), 'WAENA': (-2.61, 140.56),
-        'SAMBELIA': (-8.40, 116.67), 'TIMIKA 2': (-4.56, 136.89), 'WAMENA': (-4.09, 138.94),
-        'SINABANG': (2.48, 96.38), 'AMPENAN': (-8.57, 116.07), 'JERANJANG': (-8.67, 116.15),
+        'AIR ANYIR': (-1.94, 106.11), 'PADANG MANGGAR': (-2.14, 106.14), 
+        'KRUENG RAYA': (5.60, 95.53), 'LUENG BATA': (5.55, 95.33), 
+        'ULEE KARENG': (5.55, 95.33), 'WAENA': (-2.61, 140.56),
+        'SAMBELIA': (-8.40, 116.67), 'TIMIKA 2': (-4.56, 136.89), 
+        'WAMENA': (-4.09, 138.94), 'SINABANG': (2.48, 96.38),
+        'AMPENAN': (-8.57, 116.07), 'JERANJANG': (-8.67, 116.15),
     }
-    loc = df[['PLTD']].drop_duplicates()
+
+    # Tambah data stok ke map
+    loc = df.groupby('PLTD').agg({
+        'Qty': 'sum',
+        'Jenis': 'count'
+    }).reset_index()
+    
     loc['lat'] = loc['PLTD'].map(lambda x: coords.get(x, (None, None))[0])
     loc['lon'] = loc['PLTD'].map(lambda x: coords.get(x, (None, None))[1])
-    st.map(loc.dropna(subset=['lat']), latitude='lat', longitude='lon', zoom=4, height=350)
+    loc = loc.dropna(subset=['lat'])
+
+    # Ukuran titik berdasarkan stok
+    loc['size'] = loc['Qty'] / loc['Qty'].max() * 40 + 20
+
+    st.map(
+        loc,
+        latitude='lat',
+        longitude='lon',
+        size='size',
+        color='#1E88E5',
+        zoom=4,
+        height=420
+    )
+
+    # ================== TABLE RINGKASAN ==================
+    st.subheader("Ringkasan Stok per PLTD")
+    summary = df.groupby('PLTD').agg(
+        Total_Stok=('Qty', 'sum'),
+        Item=('Part_Number', 'nunique' if 'Part_Number' in df.columns else 'count'),
+        Maintenance=('Jenis', 'count')
+    ).sort_values('Total_Stok', ascending=False)
+    
+    st.dataframe(
+        summary.style.background_gradient(cmap='Blues', subset=['Total_Stok']),
+        use_container_width=True,
+        height=300
+    )
 
 def page_stock():
     st.title("📦 Stok Material PLTD")
