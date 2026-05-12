@@ -791,9 +791,10 @@ def page_propose():
     st.markdown("---")
 
     # ===== DETAIL PROPOSE - PIVOT TABLE DENGAN WARNA STATUS =====
-    st.subheader(f"📋 Detail Propose Order per Material ({jb} Bulan)")
+     # ===== HEAT MAP: PROPOSE DELIVERY =====
+    st.subheader(f"📦 Propose Delivery ({jb} Bulan)")
+    st.markdown("*Hanya menampilkan material yang perlu dikirim (aman = 0)*")
     
-    # Siapkan data: Propose per PLTD per Material
     dp = prev.pivot_table(
         index=['Kode Material', 'Nama Material'],
         columns='PLTD',
@@ -802,64 +803,50 @@ def page_propose():
         fill_value=0
     ).round(0).astype(int).reset_index()
     
-    # Dapatkan status untuk setiap sel
-    status_pivot = prev.pivot_table(
-        index=['Kode Material', 'Nama Material'],
-        columns='PLTD',
-        values='Status',
-        aggfunc='first',
-        fill_value='⚪ No Data'
-    ).reset_index()
-    
     for pltd in SEMUA_PLTD:
         if pltd not in dp.columns:
             dp[pltd] = 0
-    dp = dp[['Kode Material', 'Nama Material'] + pltd_cols_s]
+    pltd_cols_s = [p for p in SEMUA_PLTD if p in sp.columns]  # pakai pltd_cols_s dari Sisa Bulan
+    
+    dp = dp[['Kode Material', 'Nama Material'] + [p for p in SEMUA_PLTD if p in dp.columns]]
     
     # Urutkan
-    def urutkan2(kode):
+    def urutkan3(kode):
         try: return URUTAN_MATERIAL.index(kode)
         except ValueError: return 999
-    dp['_sort'] = dp['Kode Material'].apply(urutkan2)
+    dp['_sort'] = dp['Kode Material'].apply(urutkan3)
     dp = dp.sort_values('_sort').drop(columns=['_sort'])
     
-    # Siapkan style berdasarkan status
-    def color_by_status(val, row_idx, col_name):
-        """Warnai sel berdasarkan status dari status_pivot"""
-        if col_name in ('Kode Material', 'Nama Material', '_sort'):
-            return ''
-        kode = dp.loc[row_idx, 'Kode Material']
-        status_row = status_pivot[status_pivot['Kode Material'] == kode]
-        if not status_row.empty and col_name in status_row.columns:
-            status = status_row[col_name].values[0]
-            if status == '🔴 Urgent':
-                return 'background-color: #ffcccc; color: #cc0000; font-weight: bold;'
-            elif status == '🟠 Warning':
-                return 'background-color: #ffe0b2; color: #e65100; font-weight: bold;'
-            elif status == '🟡 Perlu Order':
-                return 'background-color: #fff9c4; color: #f57f17;'
-            elif status == '🟢 Aman':
-                return 'background-color: #c8e6c9; color: #1b5e20;'
+    # Buat heatmap style
+    def heatmap_style(val):
+        if isinstance(val, (int, float)):
+            if val <= 0:
+                return 'background-color: #e8f5e9; color: #888;'
+            elif val < 50:
+                return 'background-color: #fff9c4;'
+            elif val < 200:
+                return 'background-color: #ffe0b2; font-weight: bold;'
+            elif val < 1000:
+                return 'background-color: #ffab91; font-weight: bold; color: #bf360c;'
+            else:
+                return 'background-color: #ef5350; font-weight: bold; color: white;'
         return ''
     
-    # Apply style
-    styled = dp.style.apply(
-        lambda col: [color_by_status(v, i, col.name) for i, v in enumerate(col)],
-        subset=pltd_cols_s
-    )
+    styled_dp = dp.style.applymap(heatmap_style, subset=[c for c in dp.columns if c not in ('Kode Material', 'Nama Material')])
     
     cfg_dp = {'Kode Material': st.column_config.TextColumn(pinned=True), 'Nama Material': st.column_config.TextColumn(pinned=True)}
-    for col in pltd_cols_s:
+    for col in [c for c in dp.columns if c not in ('Kode Material', 'Nama Material')]:
         cfg_dp[col] = st.column_config.NumberColumn(format="%.0f")
     
-    st.dataframe(styled, column_config=cfg_dp, use_container_width=True, hide_index=True)
+    st.dataframe(styled_dp, column_config=cfg_dp, use_container_width=True, hide_index=True)
     
     st.markdown("""
-    <div style="display: flex; gap: 20px; flex-wrap: wrap; margin-top: 10px; font-size: 13px;">
-        <span style="background-color: #ffcccc; color: #cc0000; padding: 4px 12px; border-radius: 4px; font-weight: bold;">🔴 Urgent (Sisa &lt; 1 bulan)</span>
-        <span style="background-color: #ffe0b2; color: #e65100; padding: 4px 12px; border-radius: 4px; font-weight: bold;">🟠 Warning (Sisa &lt; 2 bulan)</span>
-        <span style="background-color: #fff9c4; color: #f57f17; padding: 4px 12px; border-radius: 4px;">🟡 Perlu Order (Sisa &lt; Kebutuhan)</span>
-        <span style="background-color: #c8e6c9; color: #1b5e20; padding: 4px 12px; border-radius: 4px;">🟢 Aman (Stok cukup)</span>
+    <div style="display: flex; gap: 15px; flex-wrap: wrap; margin-top: 10px; font-size: 12px;">
+        <span style="background-color: #e8f5e9; color: #888; padding: 3px 10px; border-radius: 3px;">🟢 0 (Tidak perlu kirim)</span>
+        <span style="background-color: #fff9c4; padding: 3px 10px; border-radius: 3px;">🟡 1 - 49 unit</span>
+        <span style="background-color: #ffe0b2; padding: 3px 10px; border-radius: 3px; font-weight: bold;">🟠 50 - 199 unit</span>
+        <span style="background-color: #ffab91; padding: 3px 10px; border-radius: 3px; font-weight: bold; color: #bf360c;">🔴 200 - 999 unit</span>
+        <span style="background-color: #ef5350; padding: 3px 10px; border-radius: 3px; font-weight: bold; color: white;">⛔ ≥ 1000 unit</span>
     </div>
     """, unsafe_allow_html=True)
     st.markdown("---")
