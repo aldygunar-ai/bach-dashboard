@@ -899,32 +899,21 @@ def page_transaksi():
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
         
-        # Pastikan kolom penting ada
-        if 'STATUS' not in df.columns:
-            df['STATUS'] = '-'
-        if 'WH TUJUAN' not in df.columns:
-            df['WH TUJUAN'] = '-'
-        if 'ITEM NAME' not in df.columns:
-            df['ITEM NAME'] = '-'
-        
         return df
     
-      df_raw = load_transaksi()
+    df_raw = load_transaksi()
     
-    # PAKSA buat kolom wajib (meskipun dataframe kosong)
+    # Paksa buat kolom wajib
     WAJIB = ['PROJECT', 'STATUS', 'WH TUJUAN', 'ITEM NAME', 'QTY', 'TOTAL COST', 'Tahun', 'Bulan', 'TANGGAL', 'Tgl_Str']
     for col in WAJIB:
         if col not in df_raw.columns:
-            df_raw[col] = '-' if col != 'TANGGAL' else pd.NaT
+            df_raw[col] = '-'
     
-    if df_raw.empty or len(df_raw) == 0:
-        df_raw = pd.DataFrame({c: ['-'] for c in WAJIB})
-    
-    if len(df_raw) == 1 and df_raw['PROJECT'].iloc[0] == '-':
-        st.warning("Data transaksi project tidak tersedia (SharePoint tidak bisa diakses).")
+    # Kalau benar-benar kosong, kasih pesan dan berhenti
+    if df_raw.empty or len(df_raw) == 0 or df_raw['PROJECT'].iloc[0] == '-':
+        st.warning("⚠️ Data transaksi project tidak tersedia (SharePoint tidak bisa diakses).")
+        st.info("Silakan coba lagi nanti atau hubungi admin.")
         return
-    if 'TANGGAL' not in df_raw.columns:
-        df_raw['TANGGAL'] = pd.NaT
     
     if 'reset_counter' not in st.session_state:
         st.session_state.reset_counter = 0
@@ -1002,16 +991,19 @@ def page_transaksi():
     
     st.markdown("---")
     
-    if 'STATUS' in f.columns and not f[f['STATUS'].isin(['DELIVERED', 'CANCEL'])].empty:
-        st.subheader("⚠️ Highlight Outstanding")
+    st.subheader("⚠️ Highlight Outstanding")
+    if 'STATUS' in f.columns:
         df_out = f[~f['STATUS'].isin(['DELIVERED', 'CANCEL'])]
-        st.dataframe(
-            df_out[['TANGGAL', 'PROJECT', 'WH TUJUAN', 'ITEM NAME', 'QTY', 'STATUS']].head(15),
-            use_container_width=True,
-            hide_index=True
-        )
+        if not df_out.empty:
+            st.dataframe(
+                df_out[['TANGGAL', 'PROJECT', 'WH TUJUAN', 'ITEM NAME', 'QTY', 'STATUS']].head(15),
+                use_container_width=True,
+                hide_index=True
+            )
+        else:
+            st.success("✅ Tidak ada transaksi outstanding. Semua sudah delivered.")
     else:
-        st.success("✅ Tidak ada transaksi outstanding. Semua sudah delivered.")
+        st.info("Data STATUS tidak tersedia.")
     
     st.markdown("---")
     
