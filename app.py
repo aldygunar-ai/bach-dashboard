@@ -298,7 +298,7 @@ def load_all():
             elif is_format_padang:
                 log.append(f"  -> Format PADANG MANGGAR terdeteksi (header di baris {header_row})")
                 i_nama = 3
-                i_qty = 8
+                i_qty = 9
                 material_stok = {}
                 for r in data[header_row + 1:]:
                     if len(r) <= max(i_nama, i_qty):
