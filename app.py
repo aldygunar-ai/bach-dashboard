@@ -915,6 +915,13 @@ def page_transaksi():
         st.warning("Data transaksi project tidak tersedia.")
         return
     
+    # Paksa semua kolom yang diperlukan ada
+    for col in ['STATUS', 'WH TUJUAN', 'ITEM NAME', 'QTY', 'TOTAL COST', 'Tahun', 'Bulan']:
+        if col not in df_raw.columns:
+            df_raw[col] = '-'
+    if 'TANGGAL' not in df_raw.columns:
+        df_raw['TANGGAL'] = pd.NaT
+    
     if 'reset_counter' not in st.session_state:
         st.session_state.reset_counter = 0
     
