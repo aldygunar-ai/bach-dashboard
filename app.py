@@ -919,12 +919,14 @@ def page_transaksi():
         sel_year = st.multiselect("📅 Tahun", sorted(df_raw['Tahun'].unique(), reverse=True), default=[], key=f'yt_{c}')
         sel_month = st.multiselect("🗓️ Bulan", sorted(df_raw['Bulan'].unique()), key=f'mt_{c}')
         
-        # Handle STATUS kalau tidak ada
-        if 'STATUS' in df_raw.columns:
-            sel_stat = st.multiselect("📊 Status", sorted(df_raw['STATUS'].unique()), key=f'stt_{c}')
+        # Cek apakah kolom STATUS ada
+        if 'STATUS' in df_raw.columns and df_raw['STATUS'].notna().any():
+            status_options = sorted(df_raw['STATUS'].dropna().unique())
+            sel_stat = st.multiselect("📊 Status", status_options, key=f'stt_{c}')
         else:
+            st.markdown("📊 *Status: data tidak tersedia*")
             sel_stat = []
-        
+            
         sel_site = st.multiselect("📍 Site (WH Tujuan)", sorted(df_raw['WH TUJUAN'].dropna().unique()), key=f'sit_{c}')
         
         st.divider()
@@ -935,7 +937,8 @@ def page_transaksi():
     if sel_proj: df_f = df_f[df_f['PROJECT'].isin(sel_proj)]
     if sel_year: df_f = df_f[df_f['Tahun'].isin(sel_year)]
     if sel_month: df_f = df_f[df_f['Bulan'].isin(sel_month)]
-    if sel_stat: df_f = df_f[df_f['STATUS'].isin(sel_stat)]
+    if sel_stat and 'STATUS' in df_f.columns:
+        df_f = df_f[df_f['STATUS'].isin(sel_stat)]
     if sel_site: df_f = df_f[df_f['WH TUJUAN'].isin(sel_site)]
 
     # 4. TAMPILAN
