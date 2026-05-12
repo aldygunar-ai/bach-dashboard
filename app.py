@@ -592,7 +592,7 @@ def page_stock():
             sp = sisa_df.pivot_table(index=['Kode Material','Nama Material'], columns='PLTD', values='Sisa_Bulan', aggfunc='first', fill_value=0.0).reset_index()
             for pltd in SEMUA_PLTD:
                 if pltd not in sp.columns: sp[pltd] = 0.0
-            pltd_cols_s = [p for p in SEMUA_PLTD if p in sp.columns]
+            pltd_cols_s = [p for p in SEMUA_PLTD if p in dp.columns]
             sp = sp[['Kode Material','Nama Material'] + pltd_cols_s]
             def urutkan(kode):
                 try: return URUTAN_MATERIAL.index(kode)
