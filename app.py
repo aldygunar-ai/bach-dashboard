@@ -832,7 +832,7 @@ def page_propose():
                 return 'background-color: #ef5350; font-weight: bold; color: white;'
         return ''
     
-    styled_dp = dp.style.applymap(heatmap_style, subset=[c for c in dp.columns if c not in ('Kode Material', 'Nama Material')])
+        styled_dp = dp.style.map(heatmap_style, subset=[c for c in dp.columns if c not in ('Kode Material', 'Nama Material')])
     
     cfg_dp = {'Kode Material': st.column_config.TextColumn(pinned=True), 'Nama Material': st.column_config.TextColumn(pinned=True)}
     for col in [c for c in dp.columns if c not in ('Kode Material', 'Nama Material')]:
