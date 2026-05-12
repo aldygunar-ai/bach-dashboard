@@ -857,37 +857,31 @@ def page_propose():
     st.info(f"📦 Total usulan order: {urg['Propose_N_Bulan'].sum() + wrn['Propose_N_Bulan'].sum():,.0f} unit")
 
 def page_transaksi():
-    st.title("📊 Transaksi Project")
-    st.markdown("*Dashboard monitoring transaksi project PLTD & DAS*")
-    
     import requests
     import io
     
-    SHAREPOINT_OPS = "https://bachmulti-my.sharepoint.com/:x:/g/personal/prabawa_bachgroup_co_id/IQDpLV2xOcHmS51kfDxWqHQAAUHHovDCqOPtICGu3HUp6nc?download=1"
-    SHAREPOINT_DAS = "https://bachmulti-my.sharepoint.com/:x:/g/personal/prabawa_bachgroup_co_id/IQBxJHUjgIjQTooUQPRp14iZAUy5KIiRVxLFRW-z8X17lDY?download=1"
-    
+    # 1. LOAD DATA (dari kode lamamu yang sudah jalan)
+    URL_OPS = "https://bachmulti-my.sharepoint.com/:x:/g/personal/prabawa_bachgroup_co_id/IQDpLV2xOcHmS51kfDxWqHQAAUHHovDCqOPtICGu3HUp6nc?download=1"
+    URL_DAS = "https://bachmulti-my.sharepoint.com/:x:/g/personal/prabawa_bachgroup_co_id/IQBxJHUjgIjQTooUQPRp14iZAUy5KIiRVxLFRW-z8X17lDY?download=1"
+
     @st.cache_data(ttl=600)
     def load_transaksi():
         headers = {'User-Agent': 'Mozilla/5.0'}
-        df_ops = pd.DataFrame()
-        df_das = pd.DataFrame()
-        
         try:
-            resp = requests.get(SHAREPOINT_OPS, headers=headers, timeout=20)
-            df_ops = pd.read_excel(io.BytesIO(resp.content))
+            res_ops = requests.get(URL_OPS, headers=headers, timeout=20)
+            df_ops = pd.read_excel(io.BytesIO(res_ops.content))
             df_ops['PROJECT'] = 'PROJECT PLTD'
         except:
-            pass
+            df_ops = pd.DataFrame()
         
         try:
-            resp = requests.get(SHAREPOINT_DAS, headers=headers, timeout=20)
-            df_das = pd.read_excel(io.BytesIO(resp.content))
+            res_das = requests.get(URL_DAS, headers=headers, timeout=20)
+            df_das = pd.read_excel(io.BytesIO(res_das.content))
             df_das['PROJECT'] = 'PROJECT DAS'
         except:
-            pass
+            df_das = pd.DataFrame()
         
         df = pd.concat([df_ops, df_das], ignore_index=True)
-        
         if not df.empty and 'TANGGAL' in df.columns:
             df['TANGGAL'] = pd.to_datetime(df['TANGGAL'], errors='coerce')
             df = df.dropna(subset=['TANGGAL'])
@@ -895,128 +889,126 @@ def page_transaksi():
             df['Bulan'] = df['TANGGAL'].dt.strftime('%B')
             df['Tgl_Str'] = df['TANGGAL'].dt.strftime('%Y-%m-%d')
         
+        # Pastikan kolom numerik
         for col in ['QTY', 'TOTAL COST']:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
         
         return df
-    
+
     df_raw = load_transaksi()
-    
-    # Paksa buat kolom wajib
-    WAJIB = ['PROJECT', 'STATUS', 'WH TUJUAN', 'ITEM NAME', 'QTY', 'TOTAL COST', 'Tahun', 'Bulan', 'TANGGAL', 'Tgl_Str']
-    for col in WAJIB:
-        if col not in df_raw.columns:
-            df_raw[col] = '-'
-    
-    # Kalau benar-benar kosong, kasih pesan dan berhenti
-    if df_raw.empty or len(df_raw) == 0 or df_raw['PROJECT'].iloc[0] == '-':
+
+    # Handle kalau dataframe benar-benar kosong
+    if df_raw.empty:
         st.warning("⚠️ Data transaksi project tidak tersedia (SharePoint tidak bisa diakses).")
-        st.info("Silakan coba lagi nanti atau hubungi admin.")
         return
-    
-    if 'reset_counter' not in st.session_state:
-        st.session_state.reset_counter = 0
-    
+
+    # 2. LOGIKA CLEAR FILTER
+    if 'reset_counter_trans' not in st.session_state:
+        st.session_state.reset_counter_trans = 0
+
     def do_reset():
-        st.session_state.reset_counter += 1
-    
+        st.session_state.reset_counter_trans += 1
+
     with st.sidebar:
-        st.markdown('<div style="color:white; font-size:20px; font-weight:800; text-align:center; margin-bottom:25px; padding:10px; border-bottom:1px solid rgba(255,255,255,0.2);">PT BACH MULTI GLOBAL</div>', unsafe_allow_html=True)
+        st.markdown('<div style="color:white; font-size:20px; font-weight:800; text-align:center; margin-bottom:25px; padding:10px; border-bottom:1px solid #ffffff33;">PT BACH MULTI GLOBAL</div>', unsafe_allow_html=True)
         
-        c = st.session_state.reset_counter
+        c = st.session_state.reset_counter_trans
         
-        sel_proj = st.multiselect("📁 Project", sorted(df_raw['PROJECT'].unique()), default=[], key=f'p_{c}')
-        sel_year = st.multiselect("📅 Tahun", sorted(df_raw['Tahun'].unique(), reverse=True), default=[], key=f'y_{c}')
-        sel_month = st.multiselect("🗓️ Bulan", sorted(df_raw['Bulan'].unique()), key=f'm_{c}')
-        sel_stat = st.multiselect("📊 Status", sorted(df_raw['STATUS'].unique()), key=f's_{c}')
-        sel_site = st.multiselect("📍 Site (WH Tujuan)", sorted(df_raw['WH TUJUAN'].unique()), key=f'st_{c}')
+        sel_proj = st.multiselect("📁 Project", sorted(df_raw['PROJECT'].unique()), default=[], key=f'pt_{c}')
+        sel_year = st.multiselect("📅 Tahun", sorted(df_raw['Tahun'].unique(), reverse=True), default=[], key=f'yt_{c}')
+        sel_month = st.multiselect("🗓️ Bulan", sorted(df_raw['Bulan'].unique()), key=f'mt_{c}')
+        
+        # Handle STATUS kalau tidak ada
+        if 'STATUS' in df_raw.columns:
+            sel_stat = st.multiselect("📊 Status", sorted(df_raw['STATUS'].unique()), key=f'stt_{c}')
+        else:
+            sel_stat = []
+        
+        sel_site = st.multiselect("📍 Site (WH Tujuan)", sorted(df_raw['WH TUJUAN'].dropna().unique()), key=f'sit_{c}')
         
         st.divider()
         st.button("🔄 Clear All Filters", on_click=do_reset, use_container_width=True)
-    
-    f = df_raw.copy()
-    if sel_proj: f = f[f['PROJECT'].isin(sel_proj)]
-    if sel_year: f = f[f['Tahun'].isin(sel_year)]
-    if sel_month: f = f[f['Bulan'].isin(sel_month)]
-    if sel_stat: f = f[f['STATUS'].isin(sel_stat)]
-    if sel_site: f = f[f['WH TUJUAN'].isin(sel_site)]
+
+    # 3. FILTERING
+    df_f = df_raw.copy()
+    if sel_proj: df_f = df_f[df_f['PROJECT'].isin(sel_proj)]
+    if sel_year: df_f = df_f[df_f['Tahun'].isin(sel_year)]
+    if sel_month: df_f = df_f[df_f['Bulan'].isin(sel_month)]
+    if sel_stat: df_f = df_f[df_f['STATUS'].isin(sel_stat)]
+    if sel_site: df_f = df_f[df_f['WH TUJUAN'].isin(sel_site)]
+
+    # 4. TAMPILAN
+    st.title("📊 Dashboard Project Bach")
     
     if not (sel_proj or sel_year or sel_month or sel_stat or sel_site):
-        st.info("👋 Silakan pilih filter di samping kiri untuk menampilkan data.")
+        st.info("👋 Selamat Datang! Silakan pilih filter di samping kiri untuk menampilkan data.")
         return
-    
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Total Order", len(f))
-    m2.metric("Total Qty", f"{int(f['QTY'].sum()):,}")
-    m3.metric("Total Biaya", f"Rp {f['TOTAL COST'].sum():,.0f}")
-    m4.metric("Site Aktif", f['WH TUJUAN'].nunique())
-    
+
+    # KPI
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Total Order", len(df_f))
+    c2.metric("Total Qty", f"{int(df_f['QTY'].sum()):,}")
+    c3.metric("Total Biaya", f"Rp {df_f['TOTAL COST'].sum():,.0f}")
+    c4.metric("Site Aktif", df_f['WH TUJUAN'].nunique())
+
     st.markdown("---")
-    
+
+    # Tren
     st.subheader("📈 Tren Permintaan Harian")
-    trend_data = f.groupby('Tgl_Str').size().reset_index(name='Requests')
-    
-    if len(trend_data) > 60:
-        trend_data = f.groupby(pd.Grouper(key='TANGGAL', freq='W')).size().reset_index(name='Requests')
-        trend_data['Tgl_Str'] = trend_data['TANGGAL'].dt.strftime('%Y-%m-%d')
-    
-    fig_tr = px.line(trend_data, x='Tgl_Str', y='Requests', markers=True, text='Requests',
-                     color_discrete_sequence=['#0A2540'])
-    fig_tr.update_traces(textposition='top center', line_shape='spline')
-    fig_tr.update_layout(height=350)
-    st.plotly_chart(fig_tr, use_container_width=True, config={'doubleClick': 'reset'})
-    
+    if not df_f.empty:
+        trend_data = df_f.groupby('Tgl_Str').size().reset_index(name='Requests')
+        if len(trend_data) > 60:
+            trend_data = df_f.groupby(pd.Grouper(key='TANGGAL', freq='W')).size().reset_index(name='Requests')
+            trend_data['Tgl_Str'] = trend_data['TANGGAL'].dt.strftime('%Y-%m-%d')
+        fig_tr = px.line(trend_data, x='Tgl_Str', y='Requests', markers=True, text='Requests', color_discrete_sequence=['#0E2F56'])
+        fig_tr.update_traces(textposition="top center")
+        st.plotly_chart(fig_tr, use_container_width=True)
+
     st.markdown("---")
-    
-    c1, c2 = st.columns(2)
-    
-    with c1:
+
+    # Bar Charts
+    col1, col2 = st.columns(2)
+    with col1:
         st.subheader("🏢 Top Site Request (QTY)")
-        top_site = f.groupby('WH TUJUAN')['QTY'].sum().nlargest(8).reset_index()
-        fig_site = px.bar(top_site, x='QTY', y='WH TUJUAN', orientation='h',
-                          text='QTY', color='QTY', color_continuous_scale='Teal')
-        fig_site.update_layout(yaxis={'categoryorder': 'total ascending'}, height=350)
-        fig_site.update_traces(textposition='outside', texttemplate='%{text:,.0f}')
-        st.plotly_chart(fig_site, use_container_width=True, config={'doubleClick': 'reset'})
-    
-    with c2:
+        if not df_f.empty:
+            top_site = df_f.groupby('WH TUJUAN')['QTY'].sum().nlargest(8).reset_index()
+            fig_site = px.bar(top_site, x='QTY', y='WH TUJUAN', orientation='h', text='QTY',
+                              color='QTY', color_continuous_scale='Blues')
+            fig_site.update_layout(yaxis={'categoryorder': 'total ascending'}, height=350)
+            fig_site.update_traces(textposition='outside', texttemplate='%{text:,.0f}')
+            st.plotly_chart(fig_site, use_container_width=True)
+
+    with col2:
         st.subheader("🔝 Top Requested Items")
-        top_item = f.groupby('ITEM NAME')['QTY'].sum().nlargest(8).reset_index()
-        fig_item = px.bar(top_item, x='QTY', y='ITEM NAME', orientation='h',
-                          text='QTY', color='QTY', color_continuous_scale='Blues')
-        fig_item.update_layout(yaxis={'categoryorder': 'total ascending'}, height=350)
-        fig_item.update_traces(textposition='outside', texttemplate='%{text:,.0f}')
-        st.plotly_chart(fig_item, use_container_width=True, config={'doubleClick': 'reset'})
-    
+        if not df_f.empty:
+            top_item = df_f.groupby('ITEM NAME')['QTY'].sum().nlargest(8).reset_index()
+            fig_item = px.bar(top_item, x='QTY', y='ITEM NAME', orientation='h', text='QTY',
+                              color_discrete_sequence=['#4B8BBE'])
+            fig_item.update_layout(yaxis={'categoryorder': 'total ascending'}, height=350)
+            fig_item.update_traces(textposition='outside', texttemplate='%{text:,.0f}')
+            st.plotly_chart(fig_item, use_container_width=True)
+
     st.markdown("---")
-    
+
+    # Outstanding
     st.subheader("⚠️ Highlight Outstanding")
-    if 'STATUS' in f.columns:
-        df_out = f[~f['STATUS'].isin(['DELIVERED', 'CANCEL'])]
+    if 'STATUS' in df_f.columns:
+        df_out = df_f[~df_f['STATUS'].isin(['DELIVERED', 'CANCEL'])]
         if not df_out.empty:
-            st.dataframe(
-                df_out[['TANGGAL', 'PROJECT', 'WH TUJUAN', 'ITEM NAME', 'QTY', 'STATUS']].head(15),
-                use_container_width=True,
-                hide_index=True
-            )
+            st.dataframe(df_out[['TANGGAL', 'PROJECT', 'WH TUJUAN', 'ITEM NAME', 'QTY', 'STATUS']].head(15),
+                         use_container_width=True, hide_index=True)
         else:
             st.success("✅ Tidak ada transaksi outstanding. Semua sudah delivered.")
     else:
         st.info("Data STATUS tidak tersedia.")
-    
-    st.markdown("---")
-    
+
+    # Detail
     st.subheader("📋 Detail Movement Record & Status")
     display_cols = ['TANGGAL', 'PROJECT', 'WH TUJUAN', 'ITEM NAME', 'QTY']
-    if 'TOTAL COST' in f.columns: display_cols.append('TOTAL COST')
-    if 'STATUS' in f.columns: display_cols.append('STATUS')
-    
-    st.dataframe(
-        f[display_cols].head(20),
-        use_container_width=True,
-        hide_index=True
-    )
+    if 'TOTAL COST' in df_f.columns: display_cols.append('TOTAL COST')
+    if 'STATUS' in df_f.columns: display_cols.append('STATUS')
+    st.dataframe(df_f[display_cols].head(20), use_container_width=True, hide_index=True)
 
 pg = st.navigation([
     st.Page(home, title="Beranda", icon="🏠", default=True),
