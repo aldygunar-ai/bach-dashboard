@@ -42,6 +42,9 @@ PLTD_SHEETS = {
     'Sambelia': '1-8uGvDwZnciEgAXBbogkYWdHQcEClcwuln-hbaR0UAc',
     'Timika 2': '17FR17wxkeVgd0_GElV59ugetL8nutqiYwQRyY6FqIVE',
     'Wamena': '14ieCIQwEXf4hZ-RsOeLIMyKi5qEJLtQBwTz35b9JXxs',
+    'Sinabang': '1RwBiayIN0S_QeSvLzE-mAUeIYChyQua8VqIQd_EuU8Y',
+    'Ampenan': '13AU9pNiNBXjdUObQTfqeq3O7jKuWGaKcqsFq9GAi5pI',
+    'Jeranjang': '1zDbsPRHY7l1gtwvh3RoulQ8g0nhQpyyR5RMVN0n44ds',
 }
 MASTER_PLTD_ID = '1FsaZyKs3DgJlyZkx5qqpBotNK8Z6C8GOrNeJv3I8AJA'
 MASTER_D365_ID = '1C7r0AUC3taKIMR1CVmIle5gm333F4r2VPo7lWeqeH8A'
@@ -86,7 +89,8 @@ URUTAN_MATERIAL = [
 SEMUA_PLTD = [
     'PEMARON', 'MANGOLI', 'TAYAN', 'TIMIKA', 'BOBONG',
     'MERAWANG', 'AIR ANYIR', 'PADANG MANGGAR', 'KRUENG RAYA',
-    'LUENG BATA', 'ULEE KARENG', 'WAENA', 'SAMBELIA', 'TIMIKA 2', 'WAMENA'
+    'LUENG BATA', 'ULEE KARENG', 'WAENA', 'SAMBELIA', 'TIMIKA 2', 'WAMENA',
+    'SINABANG', 'AMPENAN', 'JERANJANG'
 ]
 
 def extract_kode_from_product_id(product_id, nama_material):
@@ -518,6 +522,7 @@ def home():
         'AIR ANYIR': (-1.94, 106.11), 'PADANG MANGGAR': (-2.14, 106.14), 'KRUENG RAYA': (5.60, 95.53),
         'LUENG BATA': (5.55, 95.33), 'ULEE KARENG': (5.55, 95.33), 'WAENA': (-2.61, 140.56),
         'SAMBELIA': (-8.40, 116.67), 'TIMIKA 2': (-4.56, 136.89), 'WAMENA': (-4.09, 138.94)
+        'SINABANG': (2.48, 96.38), 'AMPENAN': (-8.57, 116.07), 'JERANJANG': (-8.67, 116.15),
     }
     loc = df[['PLTD']].drop_duplicates()
     loc['lat'] = loc['PLTD'].map(lambda x: coords.get(x, (None, None))[0])
