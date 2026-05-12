@@ -576,15 +576,6 @@ def page_stock():
         st.dataframe(p, column_config={'Kode Material': st.column_config.TextColumn(pinned=True), 'Nama Material': st.column_config.TextColumn(pinned=True)}, use_container_width=True, hide_index=True)
     else: st.info("Tidak ada data Preventive.")
 
-        # DEBUG: Cek PADANG MANGGAR di df_stock
-    with st.expander("🔍 DEBUG PADANG MANGGAR di df_stock", expanded=False):
-        padang_all = df[df['PLTD'] == 'PADANG MANGGAR']
-        st.write(f"Total baris PADANG MANGGAR: {len(padang_all)}")
-        if not padang_all.empty:
-            st.dataframe(padang_all[['PLTD', 'Kode Material', 'Nama Material', 'Qty', 'Primary Code', 'Jenis']])
-        else:
-            st.error("PADANG MANGGAR TIDAK ADA di df!")
-    
     st.subheader("⏳ Sisa Stok Preventive dalam Bulan")
     if not prev.empty and m1 is not None:
         sisa_df = hitung_sisa_bulan(prev, m1)
@@ -592,7 +583,7 @@ def page_stock():
             sp = sisa_df.pivot_table(index=['Kode Material','Nama Material'], columns='PLTD', values='Sisa_Bulan', aggfunc='first', fill_value=0.0).reset_index()
             for pltd in SEMUA_PLTD:
                 if pltd not in sp.columns: sp[pltd] = 0.0
-            pltd_cols_s = [p for p in SEMUA_PLTD if p in dp.columns]
+            pltd_cols_s = [p for p in SEMUA_PLTD if p in sp.columns]
             sp = sp[['Kode Material','Nama Material'] + pltd_cols_s]
             def urutkan(kode):
                 try: return URUTAN_MATERIAL.index(kode)
@@ -608,8 +599,6 @@ def page_stock():
                 if isinstance(val, (int, float)) and val <= 1.5: return 'background-color: #ffcccc; color: #cc0000; font-weight: bold;'
                 return ''
             st.dataframe(sp.style.map(hl, subset=pltd_cols_s), column_config=cfg_s, use_container_width=True, hide_index=True)
-            with st.expander("🔍 Debug Sample Sisa Bulan"):
-                st.dataframe(sisa_df[['PLTD','Kode Material','Nama Material','Qty','Keb_Aktual','Sisa_Bulan']].head(30), use_container_width=True, hide_index=True)
         else: st.info("Data Sisa Bulan tidak tersedia.")
     else: st.info("Data tidak lengkap.")
 
