@@ -790,11 +790,10 @@ def page_propose():
     st.dataframe(cf_p, column_config={'Kode Material': st.column_config.TextColumn(pinned=True), 'Nama Material': st.column_config.TextColumn(pinned=True)}, use_container_width=True, hide_index=True)
     st.markdown("---")
 
-    # ===== DETAIL PROPOSE - PIVOT TABLE DENGAN WARNA STATUS =====
-     # ===== HEAT MAP: PROPOSE DELIVERY =====
+    # ===== HEAT MAP: PROPOSE DELIVERY =====
     st.subheader(f"📦 Propose Delivery ({jb} Bulan)")
     st.markdown("*Hanya menampilkan material yang perlu dikirim (aman = 0)*")
-    
+
     dp = prev.pivot_table(
         index=['Kode Material', 'Nama Material'],
         columns='PLTD',
@@ -802,22 +801,26 @@ def page_propose():
         aggfunc='first',
         fill_value=0
     ).round(0).astype(int).reset_index()
-    
+
+    pltd_cols_dp = [p for p in SEMUA_PLTD if p in dp.columns]
+    if not pltd_cols_dp:
+        pltd_cols_dp = [p for p in SEMUA_PLTD]
+
     for pltd in SEMUA_PLTD:
         if pltd not in dp.columns:
             dp[pltd] = 0
-    pltd_cols_s = [p for p in SEMUA_PLTD if p in sp.columns]  # pakai pltd_cols_s dari Sisa Bulan
-    
-    dp = dp[['Kode Material', 'Nama Material'] + [p for p in SEMUA_PLTD if p in dp.columns]]
-    
-    # Urutkan
+
+    dp = dp[['Kode Material', 'Nama Material'] + pltd_cols_dp]
+
     def urutkan3(kode):
-        try: return URUTAN_MATERIAL.index(kode)
-        except ValueError: return 999
+        try:
+            return URUTAN_MATERIAL.index(kode)
+        except ValueError:
+            return 999
+
     dp['_sort'] = dp['Kode Material'].apply(urutkan3)
     dp = dp.sort_values('_sort').drop(columns=['_sort'])
-    
-    # Buat heatmap style
+
     def heatmap_style(val):
         if isinstance(val, (int, float)):
             if val <= 0:
@@ -831,15 +834,19 @@ def page_propose():
             else:
                 return 'background-color: #ef5350; font-weight: bold; color: white;'
         return ''
-    
-        styled_dp = dp.style.map(heatmap_style, subset=[c for c in dp.columns if c not in ('Kode Material', 'Nama Material')])
-    
-    cfg_dp = {'Kode Material': st.column_config.TextColumn(pinned=True), 'Nama Material': st.column_config.TextColumn(pinned=True)}
-    for col in [c for c in dp.columns if c not in ('Kode Material', 'Nama Material')]:
+
+    subset_cols = [c for c in dp.columns if c not in ('Kode Material', 'Nama Material')]
+    styled_dp = dp.style.map(heatmap_style, subset=subset_cols)
+
+    cfg_dp = {
+        'Kode Material': st.column_config.TextColumn(pinned=True),
+        'Nama Material': st.column_config.TextColumn(pinned=True)
+    }
+    for col in subset_cols:
         cfg_dp[col] = st.column_config.NumberColumn(format="%.0f")
-    
+
     st.dataframe(styled_dp, column_config=cfg_dp, use_container_width=True, hide_index=True)
-    
+
     st.markdown("""
     <div style="display: flex; gap: 15px; flex-wrap: wrap; margin-top: 10px; font-size: 12px;">
         <span style="background-color: #e8f5e9; color: #888; padding: 3px 10px; border-radius: 3px;">🟢 0 (Tidak perlu kirim)</span>
