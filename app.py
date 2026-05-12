@@ -909,16 +909,20 @@ def page_transaksi():
         
         return df
     
-    df_raw = load_transaksi()
+      df_raw = load_transaksi()
     
-    if df_raw.empty:
-        st.warning("Data transaksi project tidak tersedia.")
-        return
-    
-    # Paksa semua kolom yang diperlukan ada
-    for col in ['STATUS', 'WH TUJUAN', 'ITEM NAME', 'QTY', 'TOTAL COST', 'Tahun', 'Bulan']:
+    # PAKSA buat kolom wajib (meskipun dataframe kosong)
+    WAJIB = ['PROJECT', 'STATUS', 'WH TUJUAN', 'ITEM NAME', 'QTY', 'TOTAL COST', 'Tahun', 'Bulan', 'TANGGAL', 'Tgl_Str']
+    for col in WAJIB:
         if col not in df_raw.columns:
-            df_raw[col] = '-'
+            df_raw[col] = '-' if col != 'TANGGAL' else pd.NaT
+    
+    if df_raw.empty or len(df_raw) == 0:
+        df_raw = pd.DataFrame({c: ['-'] for c in WAJIB})
+    
+    if len(df_raw) == 1 and df_raw['PROJECT'].iloc[0] == '-':
+        st.warning("Data transaksi project tidak tersedia (SharePoint tidak bisa diakses).")
+        return
     if 'TANGGAL' not in df_raw.columns:
         df_raw['TANGGAL'] = pd.NaT
     
