@@ -913,22 +913,6 @@ def page_transaksi():
         return df
         
     df_raw = load_transaksi()
-    
-    # DEBUG: Cek isi dataframe
-    with st.expander("🔍 DEBUG: Isi Dataframe", expanded=False):
-        st.write(f"Total baris: {len(df_raw)}")
-        st.write(f"Kolom: {list(df_raw.columns)}")
-        st.write("**PROJECT unik:**", df_raw['PROJECT'].unique() if 'PROJECT' in df_raw.columns else "TIDAK ADA")
-        st.write("**Sample OPS:**")
-        ops = df_raw[df_raw['PROJECT'] == 'PROJECT PLTD'] if 'PROJECT' in df_raw.columns else pd.DataFrame()
-        st.write(f"  Baris OPS: {len(ops)}")
-        st.write("**Sample DAS:**")
-        das = df_raw[df_raw['PROJECT'] == 'PROJECT DAS'] if 'PROJECT' in df_raw.columns else pd.DataFrame()
-        st.write(f"  Baris DAS: {len(das)}")
-        if not das.empty:
-            st.dataframe(das.head(5))
-        else:
-            st.warning("DAS KOSONG!")
             
     # Handle kalau dataframe benar-benar kosong
     if df_raw.empty:
