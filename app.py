@@ -7,7 +7,7 @@ import gspread
 from gspread_dataframe import get_as_dataframe
 import re
 
-# ========================= CONFIG =========================
+# ========================= CONFIG & THEME =========================
 st.set_page_config(
     page_title="Dashboard PLTD Bach",
     page_icon="⚡",
@@ -15,82 +15,58 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# ========================= CORPORATE BLUE THEME =========================
+# ====================== CORPORATE BLUE THEME ======================
 st.markdown("""
 <style>
-    /* Main Theme */
     .main { background-color: #F8FAFC; }
     .stApp { background-color: #F8FAFC; }
     
-    /* Sidebar */
     [data-testid="stSidebar"] {
         background-color: #0A2540 !important;
-        color: #E0F2FE !important;
     }
-    [data-testid="stSidebar"] * {
-        color: #E0F2FE !important;
-    }
-    [data-testid="stSidebarNav"] a {
-        color: #BAE6FD !important;
-    }
-
-    /* Header */
+    [data-testid="stSidebar"] * { color: #E0F2FE !important; }
+    
     .header {
         background: linear-gradient(90deg, #0A2540, #1E40AF);
-        padding: 2rem 0;
+        padding: 2.5rem 0;
         border-radius: 0 0 16px 16px;
         color: white;
         margin-bottom: 2rem;
-        box-shadow: 0 4px 12px rgba(10, 37, 64, 0.15);
+        box-shadow: 0 4px 15px rgba(10, 37, 64, 0.2);
     }
-
-    /* Metrics */
+    
     div[data-testid="stMetricValue"] {
-        font-size: 28px;
+        font-size: 29px !important;
         font-weight: 700;
         color: #1E40AF;
     }
-    div[data-testid="stMetricLabel"] {
-        color: #64748B;
-    }
-
-    /* Cards */
+    
+    h1, h2, h3 { color: #0A2540 !important; }
+    
     .stPlotlyChart, .stDataFrame {
         background: white;
         border-radius: 12px;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.06);
-        padding: 8px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.08);
     }
-
-    h1, h2, h3 {
-        color: #0A2540 !important;
-        font-weight: 700;
-    }
-
-    /* Button Styling */
+    
     .stButton>button {
         background-color: #1E40AF;
         color: white;
         border-radius: 8px;
-        font-weight: 600;
-    }
-    .stButton>button:hover {
-        background-color: #3B82F6;
-        border: none;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# ==================== DATA FUNCTIONS (Copy dari kode lama kamu) ====================
-# Taruh semua fungsi kamu di sini (load_all, extract_kode_from_product_id, norm, hitung_sisa_bulan, dll)
-# Saya tidak menulis ulang semuanya agar tidak terlalu panjang.
+# ====================== SEMUA FUNGSI LAMA KAMU ======================
+# Paste semua fungsi di bawah ini (load_all, extract_kode..., norm, hitung_sisa_bulan, dll)
+# ... (copy dari kode asli kamu)
 
-# ========================= PAGES =========================
+# ====================== PAGES ======================
 def home():
     st.markdown("""
     <div class="header">
-        <h1 style="text-align:center; margin:0; font-size:2.8rem;">⚡ Dashboard PLTD Bach</h1>
-        <p style="text-align:center; margin:10px 0 0 0; opacity:0.9; font-size:1.1rem;">
+        <h1 style="text-align:center; margin:0; font-size:3rem;">⚡ Dashboard PLTD Bach</h1>
+        <p style="text-align:center; margin-top:10px; opacity:0.95; font-size:1.2rem;">
             Monitoring Stok & Logistik Pembangkit Listrik Tenaga Diesel
         </p>
     </div>
@@ -99,47 +75,79 @@ def home():
     data = load_all()
     df = data.get('stock', pd.DataFrame())
 
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("Total PLTD", df['PLTD'].nunique())
-    with col2:
-        st.metric("Total Stok Material", f"{df['Qty'].sum():,}")
-    with col3:
-        st.metric("Preventive", (df['Jenis']=='Preventive').sum())
-    with col4:
-        st.metric("Corrective", (df['Jenis']=='Corrective').sum())
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Total PLTD", df['PLTD'].nunique() if not df.empty else 0)
+    c2.metric("Total Stok", f"{df['Qty'].sum():,}" if not df.empty else 0)
+    c3.metric("Preventive", (df['Jenis']=='Preventive').sum() if not df.empty else 0)
+    c4.metric("Corrective", (df['Jenis']=='Corrective').sum() if not df.empty else 0)
 
-    st.subheader("📍 Lokasi PLTD")
-    # Map code kamu tetap sama...
+    st.subheader("📍 Peta Lokasi PLTD")
+    # Masukkan kode map kamu di sini
 
-# Contoh page_stock yang sudah di-improve
+
 def page_stock():
     st.title("📦 Stok Material PLTD")
     data = load_all()
     df = data['stock'].copy()
 
-    # Filter di sidebar (sudah ada di kode lama)
+    if df.empty:
+        st.warning("Data stok belum tersedia.")
+        return
 
-    tab1, tab2, tab3 = st.tabs(["🟦 Preventive", "🟠 Corrective", "⏳ Sisa Stok (Bulan)"])
+    # Filter di sidebar (bisa pakai kode lama kamu)
+
+    tab1, tab2, tab3 = st.tabs(["🟦 Material Preventive", "🟠 Material Corrective", "⏳ Sisa Stok dalam Bulan"])
 
     with tab1:
+        st.subheader("Material Preventive")
         # Isi dengan kode Preventive kamu
-        st.dataframe(...)  # sesuaikan
+        prev = df[df['Jenis'] == 'Preventive']
+        if not prev.empty:
+            st.dataframe(prev, use_container_width=True, hide_index=True)
 
     with tab2:
-        # Corrective
+        st.subheader("Material Corrective")
+        corr = df[df['Jenis'] == 'Corrective']
+        if not corr.empty:
+            st.dataframe(corr, use_container_width=True, hide_index=True)
 
     with tab3:
-        # Sisa Bulan dengan highlight merah
+        st.subheader("Sisa Stok Preventive (Bulan)")
+        m1 = data.get('m1')
+        if m1 is not None:
+            sisa_df = hitung_sisa_bulan(df[df['Jenis']=='Preventive'], m1)
+            if not sisa_df.empty:
+                st.dataframe(sisa_df, use_container_width=True, hide_index=True)
+            else:
+                st.info("Data sisa bulan tidak tersedia.")
+        else:
+            st.info("Master Data 1 belum tersedia.")
 
-# Lanjutkan untuk page lain...
 
-# ========================= NAVIGATION =========================
+def page_analisis():
+    st.title("📊 Analisis Pemakaian Material")
+    # Isi dengan kode page_analisis kamu
+    st.info("Halaman Analisis Pemakaian sedang di-load...")
+
+
+def page_propose():
+    st.title("📋 Propose Order Material")
+    # Isi dengan kode page_propose kamu
+    st.info("Halaman Propose Order sedang di-load...")
+
+
+def page_transaksi():
+    st.title("🚚 Transaksi Project")
+    # Isi dengan kode page_transaksi kamu
+    st.info("Halaman Transaksi Project sedang di-load...")
+
+
+# ====================== NAVIGATION ======================
 pg = st.navigation([
     st.Page(home, title="🏠 Beranda", icon="🏠", default=True),
     st.Page(page_stock, title="📦 Stok Material", icon="📦"),
-    st.Page(page_analisis, title="📊 Analisis Pemakaian", icon="📈"),
-    st.Page(page_propose, title="📋 Propose Order", icon="📦"),
-    st.Page(page_transaksi, title="🚚 Transaksi Project", icon="🚚"),
+    st.Page(page_analisis, title="📊 Analisis", icon="📈"),
+    st.Page(page_propose, title="📋 Propose Order", icon="📋"),
+    st.Page(page_transaksi, title="🚚 Transaksi", icon="🚚"),
 ])
 pg.run()
