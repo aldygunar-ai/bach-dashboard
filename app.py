@@ -743,13 +743,6 @@ def page_stock():
         df['WH Cikande'] = df['WH Cikande'].fillna(0)
     else: df['WH Cikande'] = 0.0
 
-    with st.sidebar:
-        with st.expander("🔧 DEBUG INFO", expanded=False):
-            for log in debug_log:
-                if 'ERR' in log: st.error(log)
-                elif 'WARN' in log: st.warning(log)
-                else: st.text(log)
-
     st.sidebar.header("Filter Stok")
     sel_pltd = st.sidebar.multiselect("PLTD", sorted(df['PLTD'].unique()), default=[])
     sel_jenis = st.sidebar.multiselect("Jenis Material", ['Preventive', 'Corrective'], default=[])
