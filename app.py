@@ -10,18 +10,163 @@ import re as re2
 
 st.set_page_config(page_title="Dashboard PLTD Bach", page_icon="⚡", layout="wide")
 
+# ========== BRANDING DI SIDEBAR ==========
+with st.sidebar:
+    st.markdown("""
+    <div style="text-align: center; padding: 20px 0 10px 0; border-bottom: 2px solid #FFD966;">
+        <h2 style="color: #FFD966; margin: 0;">⚡ BACH GROUP</h2>
+        <p style="color: #CCCCCC; font-size: 14px;">PLTD Logistics Center</p>
+    </div>
+    """, unsafe_allow_html=True)
+    st.markdown("")  # spasi kecil
+
 st.markdown("""
 <style>
-    .main { background-color: #F8F9FA; }
-    [data-testid="stSidebar"] { background-color: #0A2540 !important; }
-    [data-testid="stSidebar"] * { color: #CCCCCC !important; }
-    [data-testid="stSidebar"] label p { color: #CCCCCC !important; font-weight: 500 !important; }
-    [data-testid="stSidebarNav"] span { color: #FFFFFF !important; }
-    [data-testid="stSidebarNav"] a { color: #FFFFFF !important; }
-    [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 { color: #FFFFFF !important; }
-    div[data-testid="stMetricValue"] { font-size: 28px; font-weight: 800; color: #0A2540; }
-    .stPlotlyChart { background: white; border-radius: 10px; padding: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
-    [data-testid="stDataFrame"] { background: white; border-radius: 10px; padding: 8px; }
+    /* Global */
+    .main {
+        background: linear-gradient(135deg, #f5f7fa 0%, #e9edf2 100%);
+        font-family: 'Segoe UI', 'Roboto', sans-serif;
+    }
+    
+    /* Sidebar premium */
+    [data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #0A2540 0%, #0F3B5C 100%) !important;
+        border-right: 1px solid rgba(255,255,255,0.1);
+    }
+    [data-testid="stSidebar"] * {
+        color: #E0E7FF !important;
+    }
+    [data-testid="stSidebar"] .stSelectbox label,
+    [data-testid="stSidebar"] .stMultiSelect label {
+        font-weight: 600 !important;
+        color: #FFD966 !important;
+        letter-spacing: 0.5px;
+    }
+    [data-testid="stSidebar"] .st-emotion-cache-1y4p8pa {
+        background-color: rgba(255,255,255,0.1);
+        border-radius: 8px;
+    }
+    
+    /* Metric cards */
+    div[data-testid="stMetric"] {
+        background: white;
+        border-radius: 20px;
+        padding: 20px 15px;
+        box-shadow: 0 8px 20px rgba(0,0,0,0.05);
+        transition: all 0.2s ease;
+        border: 1px solid rgba(0,0,0,0.05);
+    }
+    div[data-testid="stMetric"]:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 12px 28px rgba(0,0,0,0.1);
+    }
+    div[data-testid="stMetricValue"] {
+        font-size: 32px !important;
+        font-weight: 800 !important;
+        color: #0A2540 !important;
+    }
+    div[data-testid="stMetricLabel"] {
+        font-weight: 600 !important;
+        color: #4B5563 !important;
+    }
+    
+    /* Dataframe / table styling */
+    .stDataFrame, [data-testid="stDataFrame"] {
+        border-radius: 16px !important;
+        overflow: hidden;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.05);
+        background: white;
+    }
+    .stDataFrame table, [data-testid="stDataFrame"] table {
+        border-collapse: collapse;
+    }
+    .stDataFrame th, [data-testid="stDataFrame"] th {
+        background-color: #0A2540 !important;
+        color: white !important;
+        font-weight: 600 !important;
+        padding: 12px 8px !important;
+    }
+    .stDataFrame td, [data-testid="stDataFrame"] td {
+        padding: 10px 8px !important;
+        border-bottom: 1px solid #E5E7EB;
+    }
+    .stDataFrame tr:hover, [data-testid="stDataFrame"] tr:hover {
+        background-color: #F3F4F6 !important;
+        transition: 0.1s;
+    }
+    
+    /* Plotly chart container */
+    .stPlotlyChart {
+        background: white;
+        border-radius: 20px;
+        padding: 16px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        border: 1px solid #EFF3F6;
+    }
+    
+    /* Button custom */
+    .stButton > button {
+        background: linear-gradient(90deg, #0A2540, #1F4E79);
+        color: white;
+        border-radius: 40px;
+        border: none;
+        padding: 0.5rem 1.2rem;
+        font-weight: 500;
+        transition: 0.2s;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+    .stButton > button:hover {
+        background: linear-gradient(90deg, #1F4E79, #0A2540);
+        transform: scale(1.02);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+    
+    /* Expander */
+    .streamlit-expanderHeader {
+        background-color: #F0F2F6;
+        border-radius: 12px;
+        font-weight: 600;
+    }
+    
+    /* Custom card untuk info tambahan */
+    .custom-card {
+        background: white;
+        border-radius: 24px;
+        padding: 20px;
+        margin: 10px 0;
+        box-shadow: 0 8px 20px rgba(0,0,0,0.05);
+        border-left: 6px solid #0A2540;
+    }
+    
+    /* Scrollbar */
+    ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+        background: #f1f1f1;
+        border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb {
+        background: #888;
+        border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+        background: #555;
+    }
+    
+    /* Heading */
+    h1, h2, h3 {
+        font-weight: 700 !important;
+        letter-spacing: -0.3px;
+    }
+    h1 {
+        background: linear-gradient(120deg, #0A2540, #2C6E9E);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        margin-bottom: 0.5rem;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -511,11 +656,18 @@ def home():
     st.title("⚡ Dashboard Stok & Logistik PLTD")
     data = load_all()
     df = data.get('stock', pd.DataFrame())
-    if df.empty: st.warning("Data belum tersedia."); return
-    c1, c2, c3 = st.columns(3)
-    c1.metric("PLTD", df['PLTD'].nunique())
-    c2.metric("Total Stok", f"{df['Qty'].sum():,.0f}")
-    c3.metric("Prev / Corr", f"{(df['Jenis']=='Preventive').sum()} / {(df['Jenis']=='Corrective').sum()}")
+    if df.empty: 
+        st.warning("Data belum tersedia.")
+        return
+    
+    # Top metrics
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("📍 PLTD Aktif", df['PLTD'].nunique())
+    col2.metric("📦 Total Stok (unit)", f"{df['Qty'].sum():,.0f}")
+    col3.metric("🔧 Preventive Items", f"{(df['Jenis']=='Preventive').sum()}")
+    col4.metric("🩺 Corrective Items", f"{(df['Jenis']=='Corrective').sum()}")
+    
+    # Koordinat PLTD (sama seperti kode asli)
     coords = {
         'PEMARON': (-8.16, 114.68), 'MANGOLI': (-1.88, 125.37), 'TAYAN': (-0.03, 110.10),
         'TIMIKA': (-4.56, 136.89), 'BOBONG': (-1.95, 124.39), 'MERAWANG': (-1.95, 105.96),
@@ -528,6 +680,56 @@ def home():
     loc['lat'] = loc['PLTD'].map(lambda x: coords.get(x, (None, None))[0])
     loc['lon'] = loc['PLTD'].map(lambda x: coords.get(x, (None, None))[1])
     st.map(loc.dropna(subset=['lat']), latitude='lat', longitude='lon', zoom=4, height=350)
+    
+    st.markdown("---")
+    
+    # Extra insight: material kritis (sisa stok ≤ 1.5 bulan)
+    m1 = data.get('m1')
+    if m1 is not None and not df[df['Jenis']=='Preventive'].empty:
+        sisa_df = hitung_sisa_bulan(df[df['Jenis']=='Preventive'], m1)
+        if not sisa_df.empty:
+            kritis = sisa_df[(sisa_df['Sisa_Bulan'] <= 1.5) & (sisa_df['Sisa_Bulan'] > 0)]
+            if not kritis.empty:
+                st.subheader("⚠️ Material Preventive Kritis (Sisa ≤ 1.5 Bulan)")
+                top_kritis = kritis.groupby(['Nama Material', 'PLTD'])['Sisa_Bulan'].min().reset_index()
+                top_kritis = top_kritis.sort_values('Sisa_Bulan').head(10)
+                st.dataframe(top_kritis, column_config={
+                    "Nama Material": "Material",
+                    "PLTD": "Lokasi",
+                    "Sisa_Bulan": st.column_config.NumberColumn("Sisa (bulan)", format="%.1f")
+                }, use_container_width=True, hide_index=True)
+            else:
+                st.success("✅ Semua material preventive dalam kondisi stok aman (>1.5 bulan)")
+    
+    # Pie chart perbandingan jenis material
+    col_left, col_right = st.columns(2)
+    with col_left:
+        st.subheader("📊 Komposisi Stok")
+        jenis_counts = df['Jenis'].value_counts().reset_index()
+        jenis_counts.columns = ['Jenis', 'Jumlah Item']
+        fig_pie = px.pie(jenis_counts, values='Jumlah Item', names='Jenis', 
+                         color_discrete_sequence=['#2C6E9E', '#E67E22'],
+                         hole=0.4)
+        fig_pie.update_layout(margin=dict(t=0, b=0), height=300)
+        st.plotly_chart(fig_pie, use_container_width=True)
+    
+    with col_right:
+        st.subheader("🏭 Top 5 PLTD dengan Stok Terbanyak")
+        top_pltd = df.groupby('PLTD')['Qty'].sum().nlargest(5).reset_index()
+        fig_bar = px.bar(top_pltd, x='PLTD', y='Qty', text='Qty',
+                         color='Qty', color_continuous_scale='Blues')
+        fig_bar.update_traces(texttemplate='%{text:.0f}', textposition='outside')
+        fig_bar.update_layout(xaxis_title="", yaxis_title="Total Unit", height=300)
+        st.plotly_chart(fig_bar, use_container_width=True)
+    
+    st.markdown("---")
+    
+    # Footer card
+    st.markdown("""
+    <div style="background: white; border-radius: 24px; padding: 20px; margin-top: 10px; text-align: center; box-shadow: 0 4px 12px rgba(0,0,0,0.05); border-left: 6px solid #0A2540;">
+        <small>📅 Data diperbarui secara real-time dari Google Sheets | ⚡ Dashboard dikelola oleh Tim Logistik Bach</small>
+    </div>
+    """, unsafe_allow_html=True)
 
 def page_stock():
     st.title("📦 Stok Material PLTD")
